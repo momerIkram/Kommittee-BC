@@ -78,7 +78,13 @@ for d in durations:
         slot_distribution = {}
         slot_distribution[d] = {}
         for s in range(1, d + 1):
-            fee = st.number_input(f"Slot {s} Fee %", 0.0, 100.0, 1.0, key=f"fee_{d}_{s}")
+                        deposit_per_user = d * 1000  # base slab assumption for preview
+            avg_nii = deposit_per_user * ((kibor + spread) / 100 / 12) * sum(range(1, d + 1)) / d
+            pre_def_loss = deposit_per_user * default_rate * (default_pre_pct / 100) * (1 - penalty_pct / 100)
+            post_def_loss = deposit_per_user * default_rate * (default_post_pct / 100)
+            avg_loss = (pre_def_loss + post_def_loss) / 100
+            suggested_fee_pct = ((avg_nii + avg_loss) / deposit_per_user) * 100
+            fee = st.number_input(f"Slot {s} Fee %", 0.0, 100.0, 1.0, key=f"fee_{d}_{s}", help=f"Suggested ≥ {suggested_fee_pct:.2f}% to break even on NII + default")
             blocked = st.checkbox(f"Block Slot {s}", key=f"block_{d}_{s}")
             slot_fees[d][s] = {"fee": fee, "blocked": blocked}
             slot_pct = st.slider(f"Slot {s} % of Users", 0, 100, 0, key=f"slot_pct_{d}_{s}")
@@ -183,7 +189,9 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.subheader(f"📘 {scenario['name']} Forecast Table")
         st.dataframe(df_forecast.style.format("{:,.0f}"))
 
-        df_monthly_summary = df_forecast.groupby("Month")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
+                df_monthly_summary = df_forecast.groupby("Month")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
+        df_monthly_summary["Deposit"] = (df_monthly_summary["Deposit/User"] / df_monthly_summary["Users"] * df_monthly_summary["Users"]).astype(int)
+        df_monthly_summary.drop(columns=["Deposit/User"], inplace=True)
         df_monthly_summary["Deposit Txns"] = df_forecast.groupby("Month")["Users"].sum().values
         df_monthly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Month")["Users"].sum().reindex(df_monthly_summary["Month"], fill_value=0).values
         df_monthly_summary["Total Txns"] = df_monthly_summary["Deposit Txns"] + df_monthly_summary["Payout Txns"]
@@ -191,7 +199,9 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.subheader("📊 Monthly Summary")
         st.dataframe(df_monthly_summary.style.format("{:,.0f}"))
 
-        df_yearly_summary = df_forecast.groupby("Year")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
+                df_yearly_summary = df_forecast.groupby("Year")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
+        df_yearly_summary["Deposit"] = (df_yearly_summary["Deposit/User"] / df_yearly_summary["Users"] * df_yearly_summary["Users"]).astype(int)
+        df_yearly_summary.drop(columns=["Deposit/User"], inplace=True)
         df_yearly_summary["Deposit Txns"] = df_forecast.groupby("Year")["Users"].sum().values
         df_yearly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Year")["Users"].sum().reindex(df_yearly_summary["Year"], fill_value=0).values
         df_yearly_summary["Total Txns"] = df_yearly_summary["Deposit Txns"] + df_yearly_summary["Payout Txns"]
@@ -202,7 +212,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         # Profit Share Breakdown
         df_profit_share = pd.DataFrame({
             "Year": df_yearly_summary["Year"],
-            "Deposit": df_yearly_summary["Deposit/User"],
+            "Deposit": df_yearly_summary["Deposit"],
             "NII": df_yearly_summary["NII"],
             "Default": df_yearly_summary["Loss"],
             "Fee": df_yearly_summary["Fee Collected"],
