@@ -39,6 +39,7 @@ default_rate = st.sidebar.number_input("Default Rate (%)", value=1.0)
 penalty_pct = st.sidebar.number_input("Pre-Payout Refund (%)", value=10.0)
 
 # === DURATION/SLAB/SLOT CONFIGURATION ===
+validation_messages = []
 durations = st.multiselect("Select Durations (months)", [3, 4, 5, 6, 8, 10], default=[3, 4, 6])
 yearly_duration_share = {}
 slab_map = {}
@@ -47,14 +48,24 @@ slot_fees = {}
 for y in range(1, 6):
     with st.expander(f"Year {y} Duration Share"):
         yearly_duration_share[y] = {}
+        total_dur_share = 0
         for d in durations:
-            yearly_duration_share[y][d] = st.slider(f"{d}M – Year {y}", 0, 100, 0, key=f"yds_{y}_{d}")
+            val = st.slider(f"{d}M – Year {y}", 0, 100, 0, key=f"yds_{y}_{d}")
+            yearly_duration_share[y][d] = val
+            total_dur_share += val
+        if total_dur_share != 100:
+            validation_messages.append(f"⚠️ Year {y} duration share total is {total_dur_share}%. It must equal 100%.")
 
 for d in durations:
     with st.expander(f"{d}M Slab Distribution"):
         slab_map[d] = {}
+        total_slab_pct = 0
         for slab in [1000, 2000, 5000, 10000, 15000, 20000, 25000, 50000]:
-            slab_map[d][slab] = st.slider(f"Slab {slab} – {d}M", 0, 100, 0, key=f"slab_{d}_{slab}")
+            val = st.slider(f"Slab {slab} – {d}M", 0, 100, 0, key=f"slab_{d}_{slab}")
+            slab_map[d][slab] = val
+            total_slab_pct += val
+        if total_slab_pct != 100:
+            validation_messages.append(f"⚠️ Slab distribution for {d}M totals {total_slab_pct}%. It must equal 100%.")
 
     with st.expander(f"{d}M Slot Fees & Blocking"):
         slot_fees[d] = {}
@@ -62,6 +73,11 @@ for d in durations:
             fee = st.number_input(f"Slot {s} Fee %", 0.0, 100.0, 1.0, key=f"fee_{d}_{s}")
             blocked = st.checkbox(f"Block Slot {s}", key=f"block_{d}_{s}")
             slot_fees[d][s] = {"fee": fee, "blocked": blocked}
+
+if validation_messages:
+    for msg in validation_messages:
+        st.warning(msg)
+    st.stop()
 
 # === RUN FORECAST FUNCTION ===
 def run_forecast(config):
