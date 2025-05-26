@@ -167,7 +167,7 @@ def run_forecast(config):
                                      "Fee Collected": fee_amt * total, "NII": nii_amt * total,
                                      "Profit": profit, "Held Capital": investment,
                                      "Payout Day": payout_day, "Cash In": total * deposit,
-                                     "Cash Out": total * deposit if s == d else 0})
+                                     "Cash Out": total * deposit if s == d and not meta['blocked'] else 0})
 
                     deposit_log.append({"Month": m + 1, "Users": total, "Deposit": investment, "NII": nii_amt * total})
                     default_log.append({"Month": m + 1, "Year": year, "Pre": pre_def, "Post": post_def, "Loss": loss_total})
@@ -207,6 +207,8 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.dataframe(df_forecast.style.format("{:,.0f}"))
 
         df_monthly_summary = df_forecast.groupby("Month")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
+df_monthly_summary["External Capital"] = np.where(df_monthly_summary["Cash Out"] > df_monthly_summary["Cash In"], df_monthly_summary["Cash Out"] - df_monthly_summary["Cash In"], 0)
+df_monthly_summary["Profit"] -= df_monthly_summary["External Capital"]
         df_monthly_summary["Deposit"] = df_monthly_summary["Cash In"]
         df_monthly_summary.drop(columns=["Deposit/User"], inplace=True)
         df_monthly_summary["Deposit Txns"] = df_forecast.groupby("Month")["Users"].sum().values
@@ -217,6 +219,8 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.dataframe(df_monthly_summary.style.format("{:,.0f}"))
 
         df_yearly_summary = df_forecast.groupby("Year")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
+df_yearly_summary["External Capital"] = np.where(df_yearly_summary["Cash Out"] > df_yearly_summary["Cash In"], df_yearly_summary["Cash Out"] - df_yearly_summary["Cash In"], 0)
+df_yearly_summary["Profit"] -= df_yearly_summary["External Capital"]
         df_yearly_summary["Deposit"] = df_yearly_summary["Cash In"]
         df_yearly_summary.drop(columns=["Deposit/User"], inplace=True)
         df_yearly_summary["Deposit Txns"] = df_forecast.groupby("Year")["Users"].sum().values
