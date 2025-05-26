@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 # === SCENARIO & UI SETUP ===
 st.set_page_config(layout="wide")
-st.title("📊 ROSCA Forecast App v15 – Full Implementation")
+st.title("📊 BACHAT-KOMMITTEE Business Case/Pricing")
 
 scenarios = []
 scenario_count = st.sidebar.number_input("Number of Scenarios", min_value=1, max_value=3, value=1)
