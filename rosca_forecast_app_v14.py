@@ -39,6 +39,8 @@ kibor = st.sidebar.number_input("KIBOR (%)", value=11.0)
 spread = st.sidebar.number_input("Spread (%)", value=5.0)
 rest_period = st.sidebar.number_input("Rest Period (months)", value=1)
 default_rate = st.sidebar.number_input("Default Rate (%)", value=1.0)
+default_pre_pct = st.sidebar.slider("Pre-Payout Default %", 0, 100, 50)
+default_post_pct = 100 - default_pre_pct
 penalty_pct = st.sidebar.number_input("Pre-Payout Refund (%)", value=10.0)
 
 # === DURATION/SLAB/SLOT CONFIGURATION ===
@@ -128,8 +130,8 @@ def run_forecast(config):
                     from_new = total - from_rejoin
                     rejoining -= from_rejoin
 
-                    pre_def = int(total * config['default_rate'] / 200)
-                    post_def = int(total * config['default_rate'] / 200)
+                    pre_def = int(total * config['default_rate'] * default_pre_pct / 10000)
+                    post_def = int(total * config['default_rate'] * default_post_pct / 10000)
                     pre_loss = pre_def * deposit * (1 - config['penalty_pct'] / 100)
                     post_loss = post_def * deposit
                     gross_income = fee_amt * total + nii_amt * total
