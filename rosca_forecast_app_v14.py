@@ -121,7 +121,7 @@ def run_forecast(config):
                     deposit = slab * d
                     fee_amt = deposit * (fee_pct / 100)
                     nii_amt = deposit * ((config['kibor'] + config['spread']) / 100 / 12)
-                                        slot_pct = slot_distribution[d].get(s, 0)
+                    slot_pct = slot_distribution[d].get(s, 0)
                     total = int(slab_users * slot_pct / 100)
 
                     from_rejoin = min(total, rejoining)
