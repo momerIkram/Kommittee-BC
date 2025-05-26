@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 # === SCENARIO & UI SETUP ===
 st.set_page_config(layout="wide")
-st.title("📊 BACHAT-KOMMITTEE Business Case/Pricing")
+st.title("📊BACHAT-KOMMITTEE Business Case/Pricing")
 
 scenarios = []
 scenario_count = st.sidebar.number_input("Number of Scenarios", min_value=1, max_value=3, value=1)
@@ -150,7 +150,7 @@ def run_forecast(config):
                     forecast.append({"Month": m + 1, "Year": year, "Duration": d, "Slab": slab, "Slot": s,
                                      "Users": total, "Deposit/User": deposit, "Fee %": fee_pct,
                                      "Fee Collected": fee_amt * total, "NII": nii_amt * total,
-                                     "Profit": profit, "Investment": investment,
+                                     "Profit": profit, "Held Capital": investment,
                                      "Payout Day": payout_day, "Cash In": total * deposit,
                                      "Cash Out": total * deposit if s == d else 0})
 
