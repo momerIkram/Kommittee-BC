@@ -143,7 +143,7 @@ def run_forecast(config):
                                      "Users": total, "Deposit/User": deposit, "Fee %": fee_pct,
                                      "Fee Collected": fee_amt * total, "NII": nii_amt * total,
                                      "Profit": profit, "Investment": investment,
-                                     "Payout Day": payout_day, "Cash In": total * deposit,,
+                                     "Payout Day": payout_day, "Cash In": total * deposit,
                                      "Cash Out": total * deposit if s == d else 0})
 
                     deposit_log.append({"Month": m + 1, "Users": total, "Deposit": investment, "NII": nii_amt * total})
@@ -180,10 +180,10 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
                        "default_rate": default_rate, "penalty_pct": penalty_pct})
         df_forecast, df_deposit, df_default, df_lifecycle = run_forecast(config)
 
-        st.subheader(f"📘 {scenario['name']} Forecast Table")
+                st.subheader(f"📘 {scenario['name']} Forecast Table")
         st.dataframe(df_forecast.style.format("{:,.0f}"))
 
-        df_monthly_summary = df_forecast.groupby("Month")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
+                df_monthly_summary = df_forecast.groupby("Month")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
         df_monthly_summary["Deposit Txns"] = df_forecast.groupby("Month")["Users"].sum().values
         df_monthly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Month")["Users"].sum().reindex(df_monthly_summary["Month"], fill_value=0).values
         df_monthly_summary["Total Txns"] = df_monthly_summary["Deposit Txns"] + df_monthly_summary["Payout Txns"]
@@ -191,7 +191,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.subheader("📊 Monthly Summary")
         st.dataframe(df_monthly_summary.style.format("{:,.0f}"))
 
-        df_yearly_summary = df_forecast.groupby("Year")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
+                df_yearly_summary = df_forecast.groupby("Year")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
         df_yearly_summary["Deposit Txns"] = df_forecast.groupby("Year")["Users"].sum().values
         df_yearly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Year")["Users"].sum().reindex(df_yearly_summary["Year"], fill_value=0).values
         df_yearly_summary["Total Txns"] = df_yearly_summary["Deposit Txns"] + df_yearly_summary["Payout Txns"]
@@ -200,7 +200,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.dataframe(df_yearly_summary.style.format("{:,.0f}"))
 
         # Profit Share Breakdown
-        df_profit_share = pd.DataFrame({
+                df_profit_share = pd.DataFrame({
             "Year": df_yearly_summary["Year"],
             "Deposit": df_yearly_summary["Deposit/User"],
             "NII": df_yearly_summary["NII"],
@@ -213,10 +213,10 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.subheader("💰 Profit Share Summary")
         st.dataframe(df_profit_share.style.format("{:,.0f}"))
 
-        df_forecast.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Forecast")
-        df_deposit.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Deposit")
-        df_default.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Defaults")
-        df_lifecycle.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Lifecycle")
+                df_forecast.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Forecast")
+                df_deposit.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Deposit")
+                df_default.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Defaults")
+                df_lifecycle.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Lifecycle")
 
 output.seek(0)
 st.download_button("📥 Download Forecast Excel", data=output, file_name="rosca_forecast_export.xlsx")
