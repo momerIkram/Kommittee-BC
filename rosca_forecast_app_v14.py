@@ -181,7 +181,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df_yearly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Year")["Users"].sum().reindex(df_yearly_summary["Year"], fill_value=0).values
         df_yearly_summary["Total Txns"] = df_yearly_summary["Deposit Txns"] + df_yearly_summary["Payout Txns"]
         df_yearly_summary = df_yearly_summary.merge(df_default.groupby("Year")["Loss"].sum().reset_index(), on="Year", how="left")
-                st.subheader("📆 Yearly Summary")
+        st.subheader("📆 Yearly Summary")
         st.dataframe(df_yearly_summary.reset_index(drop=True))
 
         # Profit Share Breakdown
