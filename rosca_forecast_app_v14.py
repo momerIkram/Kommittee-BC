@@ -72,10 +72,19 @@ for d in durations:
 
     with st.expander(f"{d}M Slot Fees & Blocking"):
         slot_fees[d] = {}
+        slot_distribution = {}
+        slot_distribution[d] = {}
         for s in range(1, d + 1):
             fee = st.number_input(f"Slot {s} Fee %", 0.0, 100.0, 1.0, key=f"fee_{d}_{s}")
             blocked = st.checkbox(f"Block Slot {s}", key=f"block_{d}_{s}")
             slot_fees[d][s] = {"fee": fee, "blocked": blocked}
+            slot_pct = st.slider(f"Slot {s} % of Users", 0, 100, 0, key=f"slot_pct_{d}_{s}")
+            slot_distribution[d][s] = slot_pct
+
+    for d in durations:
+        total_slot_pct = sum(slot_distribution[d].values())
+        if total_slot_pct != 100:
+            validation_messages.append(f"⚠️ Slot distribution for {d}M totals {total_slot_pct}%. It must equal 100%.")
 
 if validation_messages:
     for msg in validation_messages:
@@ -112,7 +121,8 @@ def run_forecast(config):
                     deposit = slab * d
                     fee_amt = deposit * (fee_pct / 100)
                     nii_amt = deposit * ((config['kibor'] + config['spread']) / 100 / 12)
-                    total = slab_users
+                                        slot_pct = slot_distribution[d].get(s, 0)
+                    total = int(slab_users * slot_pct / 100)
 
                     from_rejoin = min(total, rejoining)
                     from_new = total - from_rejoin
