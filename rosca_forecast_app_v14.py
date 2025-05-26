@@ -129,7 +129,7 @@ def run_forecast(config):
                                      "Profit": profit, "Investment": investment})
 
                     deposit_log.append({"Month": m + 1, "Users": total, "Deposit": investment, "NII": nii_amt * total})
-                    default_log.append({"Month": m + 1, "Pre": pre_def, "Post": post_def, "Loss": loss_total})
+                    default_log.append({"Month": m + 1, "Year": year, "Pre": pre_def, "Post": post_def, "Loss": loss_total})
                     lifecycle.append({"Month": m + 1, "New Users": from_new, "Rejoining": from_rejoin,
                                       "Resting": resting, "Total Active": active_total})
 
