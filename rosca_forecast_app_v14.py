@@ -2,12 +2,15 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import io
+import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-st.title("📊 ROSCA Forecast App v15.6 – Multi-TAM with Slabs & Slot Fees (No TAM Cap)")
+st.title("📊 ROSCA Forecast App v15.7 – Advanced TAM with Logs, Charts & Toggle Cap")
 
 # Step 1: Scenario Selection
 scenario_count = st.sidebar.number_input("How many TAM scenarios?", min_value=1, max_value=5, value=2, step=1)
+
+cap_tam = st.sidebar.checkbox("Cap TAM Growth?", value=False)
 
 scenarios = []
 for i in range(scenario_count):
@@ -37,8 +40,8 @@ default_rate = st.sidebar.number_input("Default Rate (%)", value=1.0)
 penalty_pct = st.sidebar.number_input("Pre-Payout Refund (%)", value=10.0)
 
 # Step 3: Annual Duration Allocation
-st.subheader("📅 Annual Duration Share")
 yearly_duration_share = {}
+st.subheader("📅 Annual Duration Share")
 for y in range(1, 6):
     with st.expander(f"Year {y} Allocation"):
         yearly_duration_share[y] = {}
@@ -84,6 +87,11 @@ def run_forecast(config):
     new_users = [int(initial_tam * config['start_pct'] / 100)]
     rejoin_tracker = {}
     forecast = []
+    lifecycle = []
+    deposit_log = []
+    default_log = []
+    TAM_used = new_users[0]
+    TAM_current = initial_tam
 
     for m in range(months):
         year = m // 12 + 1
@@ -124,29 +132,57 @@ def run_forecast(config):
                         "Profit": profit
                     })
 
+                    deposit_log.append({"Month": m + 1, "Users": total, "Deposit": deposit * total, "NII": nii_amt * total})
+                    default_log.append({"Month": m + 1, "Pre": pre_def, "Post": post_def, "Loss": pre_loss + post_loss})
+                    lifecycle.append({"Month": m + 1, "New Users": current_new, "Rejoining": rejoining, "Total Active": active_total})
+
                     rejoin_month = m + d + rest_period
                     if rejoin_month < months:
                         rejoin_tracker[rejoin_month] = rejoin_tracker.get(rejoin_month, 0) + total
 
         if m + 1 < months:
-            # NO CAP: Pure growth without TAM ceiling
-            next_growth = int(active_total * config['monthly_growth'] / 100)
+            growth_base = active_total
+            next_growth = int(growth_base * config['monthly_growth'] / 100)
+            if cap_tam and TAM_used + next_growth > TAM_current:
+                next_growth = max(0, TAM_current - TAM_used)
+            TAM_used += next_growth
+            TAM_current = int(TAM_current * (1 + config['annual_growth'] / 100)) if (m + 1) in [12, 24, 36, 48] else TAM_current
             new_users.append(next_growth)
 
-    return pd.DataFrame(forecast)
+    df_forecast = pd.DataFrame(forecast)
+    df_deposit = pd.DataFrame(deposit_log)
+    df_default = pd.DataFrame(default_log)
+    df_lifecycle = pd.DataFrame(lifecycle)
+    return df_forecast, df_deposit, df_default, df_lifecycle
 
 # Run and display
 results = {}
 for scenario in scenarios:
-    df = run_forecast(scenario)
-    results[scenario['name']] = df
-    st.subheader(f"📘 {scenario['name']} Forecast")
-    st.dataframe(df)
+    df_f, df_d, df_def, df_lc = run_forecast(scenario)
+    results[scenario['name']] = {"Forecast": df_f, "Deposit Log": df_d, "Default Log": df_def, "Lifecycle": df_lc}
+
+    st.subheader(f"📘 {scenario['name']} Forecast Table")
+    st.dataframe(df_f)
+
+    st.subheader("📆 Monthly Summary")
+    st.dataframe(df_f.groupby("Month")[["Users", "Fee Collected", "NII", "Profit"]].sum().reset_index())
+
+    st.subheader("📅 Yearly Summary")
+    st.dataframe(df_f.groupby("Year")[["Users", "Fee Collected", "NII", "Profit"]].sum().reset_index())
+
+    st.subheader("📈 Trend Charts")
+    fig, ax = plt.subplots()
+    df_f.groupby("Month")["Users"].sum().plot(ax=ax, label="Users")
+    df_f.groupby("Month")["Profit"].sum().plot(ax=ax, label="Profit")
+    ax.set_title(f"{scenario['name']} – Users & Profit Trend")
+    ax.legend()
+    st.pyplot(fig)
 
 # Excel Export
 output = io.BytesIO()
 with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-    for name, df in results.items():
-        df.to_excel(writer, index=False, sheet_name=name[:31])
+    for name, data in results.items():
+        for sheet, df in data.items():
+            df.to_excel(writer, index=False, sheet_name=f"{name[:20]}-{sheet[:10]}")
 output.seek(0)
-st.download_button("📥 Download All Scenarios (Excel)", data=output, file_name="multi_tam_forecasts_v15_6_nocap.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+st.download_button("📥 Download Excel Report", data=output, file_name="rosca_forecast_v15_7.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
