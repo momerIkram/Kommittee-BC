@@ -32,6 +32,9 @@ for i in range(scenario_count):
         })
 
 # === GLOBAL INPUTS ===
+profit_split = st.sidebar.slider("Profit Share for Party A (%)", 0, 100, 50)
+party_a_pct = profit_split / 100
+party_b_pct = 1 - party_a_pct
 kibor = st.sidebar.number_input("KIBOR (%)", value=11.0)
 spread = st.sidebar.number_input("Spread (%)", value=5.0)
 rest_period = st.sidebar.number_input("Rest Period (months)", value=1)
@@ -178,8 +181,22 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df_yearly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Year")["Users"].sum().reindex(df_yearly_summary["Year"], fill_value=0).values
         df_yearly_summary["Total Txns"] = df_yearly_summary["Deposit Txns"] + df_yearly_summary["Payout Txns"]
         df_yearly_summary = df_yearly_summary.merge(df_default.groupby("Year")["Loss"].sum().reset_index(), on="Year", how="left")
-        st.subheader("📆 Yearly Summary")
+                st.subheader("📆 Yearly Summary")
         st.dataframe(df_yearly_summary.reset_index(drop=True))
+
+        # Profit Share Breakdown
+        df_profit_share = pd.DataFrame({
+            "Year": df_yearly_summary["Year"],
+            "Deposit": df_yearly_summary["Deposit/User"],
+            "NII": df_yearly_summary["NII"],
+            "Default": df_yearly_summary["Loss"],
+            "Fee": df_yearly_summary["Fee Collected"],
+            "Total Profit": df_yearly_summary["Profit"],
+            "Part-A Profit Share": df_yearly_summary["Profit"] * party_a_pct,
+            "Part-B Profit Share": df_yearly_summary["Profit"] * party_b_pct
+        })
+        st.subheader("💰 Profit Share Summary")
+        st.dataframe(df_profit_share.reset_index(drop=True))
 
         df_forecast.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Forecast")
         df_deposit.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Deposit")
