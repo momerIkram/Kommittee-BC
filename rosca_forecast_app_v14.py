@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 # === SCENARIO & UI SETUP ===
 st.set_page_config(layout="wide")
-st.title("📊BACHAT-KOMMITTEE Business Case/Pricing")
+st.title("📊 ROSCA Forecast App v15 – Full Implementation")
 
 scenarios = []
 scenario_count = st.sidebar.number_input("Number of Scenarios", min_value=1, max_value=3, value=1)
@@ -46,6 +46,7 @@ default_post_pct = 100 - default_pre_pct
 penalty_pct = st.sidebar.number_input("Pre-Payout Refund (%)", value=10.0)
 
 # === DURATION/SLAB/SLOT CONFIGURATION ===
+slot_buffer_warning = []
 validation_messages = []
 durations = st.multiselect("Select Durations (months)", [3, 4, 5, 6, 8, 10], default=[3, 4, 6])
 yearly_duration_share = {}
@@ -89,12 +90,26 @@ for d in durations:
             blocked = st.checkbox(f"Block Slot {s}", key=f"block_{d}_{s}")
             slot_fees[d][s] = {"fee": fee, "blocked": blocked}
             slot_pct = st.slider(f"Slot {s} % of Users", 0, 100, 0, key=f"slot_pct_{d}_{s}")
-            slot_distribution[d][s] = slot_pct
+                        slot_distribution[d][s] = slot_pct
+
+        # --- Buffer Capital Check ---
+        active_slots = [s for s in slot_fees[d] if not slot_fees[d][s]['blocked']]
+        if active_slots:
+            first_payout_month = min(active_slots)
+            payout_amount = d * 1000
+            total_collected_before_payout = len(active_slots) * (first_payout_month - 1) * 1000
+            if total_collected_before_payout < payout_amount:
+                shortfall = payout_amount - total_collected_before_payout
+                slot_buffer_warning.append(f"⚠️ Duration {d}M: Collection before Slot {first_payout_month} payout is {total_collected_before_payout}, which is less than needed ({payout_amount}). External capital of PKR {shortfall:,} may be needed.")
 
     for d in durations:
         total_slot_pct = sum(slot_distribution[d].values())
         if total_slot_pct != 100:
             validation_messages.append(f"⚠️ Slot distribution for {d}M totals {total_slot_pct}%. It must equal 100%.")
+
+if slot_buffer_warning:
+    for msg in slot_buffer_warning:
+        st.error(msg)
 
 if validation_messages:
     for msg in validation_messages:
