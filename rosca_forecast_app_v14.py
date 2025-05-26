@@ -78,7 +78,7 @@ for d in durations:
         slot_distribution = {}
         slot_distribution[d] = {}
         for s in range(1, d + 1):
-                                                            deposit_per_user = d * 1000  # base slab assumption for preview
+            deposit_per_user = d * 1000  # base slab assumption for preview
             avg_nii = deposit_per_user * ((kibor + spread) / 100 / 12) * sum(range(1, d + 1)) / d
             pre_def_loss = deposit_per_user * default_rate * (default_pre_pct / 100) * (1 - penalty_pct / 100)
             post_def_loss = deposit_per_user * default_rate * (default_post_pct / 100)
@@ -189,7 +189,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.subheader(f"📘 {scenario['name']} Forecast Table")
         st.dataframe(df_forecast.style.format("{:,.0f}"))
 
-                df_monthly_summary = df_forecast.groupby("Month")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
+        df_monthly_summary = df_forecast.groupby("Month")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
         df_monthly_summary["Deposit"] = (df_monthly_summary["Deposit/User"] / df_monthly_summary["Users"] * df_monthly_summary["Users"]).astype(int)
         df_monthly_summary.drop(columns=["Deposit/User"], inplace=True)
         df_monthly_summary["Deposit Txns"] = df_forecast.groupby("Month")["Users"].sum().values
@@ -199,7 +199,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.subheader("📊 Monthly Summary")
         st.dataframe(df_monthly_summary.style.format("{:,.0f}"))
 
-                df_yearly_summary = df_forecast.groupby("Year")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
+        df_yearly_summary = df_forecast.groupby("Year")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
         df_yearly_summary["Deposit"] = (df_yearly_summary["Deposit/User"] / df_yearly_summary["Users"] * df_yearly_summary["Users"]).astype(int)
         df_yearly_summary.drop(columns=["Deposit/User"], inplace=True)
         df_yearly_summary["Deposit Txns"] = df_forecast.groupby("Year")["Users"].sum().values
