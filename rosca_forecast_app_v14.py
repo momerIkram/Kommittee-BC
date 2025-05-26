@@ -174,7 +174,7 @@ df_monthly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_foreca
 df_monthly_summary["Total Txns"] = df_monthly_summary["Deposit Txns"] + df_monthly_summary["Payout Txns"]
 df_monthly_summary["Transaction Count"] = df_forecast.groupby("Month").size().values
 df_monthly_summary = df_monthly_summary.merge(df_default.groupby("Month")["Loss"].sum().reset_index(), on="Month", how="left")
-st.dataframe(df_monthly_summary.reset_index()))
+st.dataframe(df_monthly_summary.reset_index())
 
         st.subheader("📆 Yearly Summary")
 df_yearly_summary = df_forecast.groupby("Year")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit"]].sum().reset_index()
@@ -183,7 +183,7 @@ df_yearly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecas
 df_yearly_summary["Total Txns"] = df_yearly_summary["Deposit Txns"] + df_yearly_summary["Payout Txns"]
 df_yearly_summary["Transaction Count"] = df_forecast.groupby("Year").size().values
 df_yearly_summary = df_yearly_summary.merge(df_default.groupby("Year")["Loss"].sum().reset_index(), on="Year", how="left")
-st.dataframe(df_yearly_summary.reset_index()))
+st.dataframe(df_yearly_summary.reset_index())
 
         df_forecast.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Forecast")
         df_deposit.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Deposit")
