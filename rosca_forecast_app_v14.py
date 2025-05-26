@@ -166,7 +166,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df_forecast, df_deposit, df_default, df_lifecycle = run_forecast(config)
 
         st.subheader(f"📘 {scenario['name']} Forecast Table")
-        st.dataframe(df_forecast)
+        st.dataframe(df_forecast.style.format("{:,}"))
 
         df_monthly_summary = df_forecast.groupby("Month")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit"]].sum().reset_index()
         df_monthly_summary["Deposit Txns"] = df_forecast.groupby("Month")["Users"].sum().values
@@ -174,7 +174,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df_monthly_summary["Total Txns"] = df_monthly_summary["Deposit Txns"] + df_monthly_summary["Payout Txns"]
         df_monthly_summary = df_monthly_summary.merge(df_default.groupby("Month")["Loss"].sum().reset_index(), on="Month", how="left")
         st.subheader("📊 Monthly Summary")
-        st.dataframe(df_monthly_summary.reset_index(drop=True))
+        st.dataframe(df_monthly_summary.style.format("{:,}"))
 
         df_yearly_summary = df_forecast.groupby("Year")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit"]].sum().reset_index()
         df_yearly_summary["Deposit Txns"] = df_forecast.groupby("Year")["Users"].sum().values
