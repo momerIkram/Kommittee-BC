@@ -162,26 +162,14 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
                        "default_rate": default_rate, "penalty_pct": penalty_pct})
         df_forecast, df_deposit, df_default, df_lifecycle = run_forecast(config)
 
-        st.subheader(f"📘 {scenario['name']} Forecast Table")
+                st.subheader(f"📘 {scenario['name']} Forecast Table")
         st.dataframe(df_forecast)
 
-        st.subheader("📊 Monthly Summary")
-df_monthly_summary = df_forecast.groupby("Month")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit"]].sum().reset_index()
-df_monthly_summary["Deposit Txns"] = df_forecast.groupby("Month")["Users"].sum().values
-df_monthly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Month")["Users"].sum().reindex(df_monthly_summary["Month"], fill_value=0).values
-df_monthly_summary["Total Txns"] = df_monthly_summary["Deposit Txns"] + df_monthly_summary["Payout Txns"]
-df_monthly_summary["Transaction Count"] = df_forecast.groupby("Month").size().values
-df_monthly_summary = df_monthly_summary.merge(df_default.groupby("Month")["Loss"].sum().reset_index(), on="Month", how="left")
-st.dataframe(df_monthly_summary.reset_index())
+                st.subheader("📊 Monthly Summary")
+        st.dataframe(df_monthly_summary.reset_index())
 
-        st.subheader("📆 Yearly Summary")
-df_yearly_summary = df_forecast.groupby("Year")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit"]].sum().reset_index()
-df_yearly_summary["Deposit Txns"] = df_forecast.groupby("Year")["Users"].sum().values
-df_yearly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Year")["Users"].sum().reindex(df_yearly_summary["Year"], fill_value=0).values
-df_yearly_summary["Total Txns"] = df_yearly_summary["Deposit Txns"] + df_yearly_summary["Payout Txns"]
-df_yearly_summary["Transaction Count"] = df_forecast.groupby("Year").size().values
-df_yearly_summary = df_yearly_summary.merge(df_default.groupby("Year")["Loss"].sum().reset_index(), on="Year", how="left")
-st.dataframe(df_yearly_summary.reset_index())
+                st.subheader("📆 Yearly Summary")
+        st.dataframe(df_yearly_summary.reset_index())
 
         df_forecast.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Forecast")
         df_deposit.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Deposit")
