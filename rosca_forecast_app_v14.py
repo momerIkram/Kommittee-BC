@@ -32,6 +32,7 @@ for i in range(scenario_count):
         })
 
 # === GLOBAL INPUTS ===
+collection_day = st.sidebar.number_input("Collection Day of Month", min_value=1, max_value=28, value=1)
 payout_day = st.sidebar.number_input("Payout Day of Month", min_value=1, max_value=28, value=20)
 profit_split = st.sidebar.slider("Profit Share for Party A (%)", 0, 100, 50)
 party_a_pct = profit_split / 100
@@ -129,7 +130,8 @@ def run_forecast(config):
                     fee_pct = meta['fee']
                     deposit = slab * d
                     fee_amt = deposit * (fee_pct / 100)
-                    nii_amt = deposit * ((config['kibor'] + config['spread']) / 100 / 12)
+                    held_days = max(payout_day - collection_day, 1)
+                    nii_amt = deposit * ((config['kibor'] + config['spread']) / 100 / 365) * held_days
                     slot_pct = slot_distribution[d].get(s, 0)
                     total = int(slab_users * slot_pct / 100)
 
@@ -190,7 +192,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.dataframe(df_forecast.style.format("{:,.0f}"))
 
         df_monthly_summary = df_forecast.groupby("Month")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
-        df_monthly_summary["Deposit"] = (df_monthly_summary["Deposit/User"] / df_monthly_summary["Users"] * df_monthly_summary["Users"]).astype(int)
+        df_monthly_summary["Deposit"] = df_monthly_summary["Cash In"]
         df_monthly_summary.drop(columns=["Deposit/User"], inplace=True)
         df_monthly_summary["Deposit Txns"] = df_forecast.groupby("Month")["Users"].sum().values
         df_monthly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Month")["Users"].sum().reindex(df_monthly_summary["Month"], fill_value=0).values
@@ -200,7 +202,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.dataframe(df_monthly_summary.style.format("{:,.0f}"))
 
         df_yearly_summary = df_forecast.groupby("Year")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
-        df_yearly_summary["Deposit"] = (df_yearly_summary["Deposit/User"] / df_yearly_summary["Users"] * df_yearly_summary["Users"]).astype(int)
+        df_yearly_summary["Deposit"] = df_yearly_summary["Cash In"]
         df_yearly_summary.drop(columns=["Deposit/User"], inplace=True)
         df_yearly_summary["Deposit Txns"] = df_forecast.groupby("Year")["Users"].sum().values
         df_yearly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Year")["Users"].sum().reindex(df_yearly_summary["Year"], fill_value=0).values
