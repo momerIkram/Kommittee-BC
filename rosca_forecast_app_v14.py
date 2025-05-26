@@ -170,7 +170,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df_monthly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Month")["Users"].sum().reindex(df_monthly_summary["Month"], fill_value=0).values
         df_monthly_summary["Total Txns"] = df_monthly_summary["Deposit Txns"] + df_monthly_summary["Payout Txns"]
         df_monthly_summary = df_monthly_summary.merge(df_default.groupby("Month")["Loss"].sum().reset_index(), on="Month", how="left")
-                st.subheader("📊 Monthly Summary")
+        st.subheader("📊 Monthly Summary")
         st.dataframe(df_monthly_summary.reset_index(drop=True))
 
         df_yearly_summary = df_forecast.groupby("Year")[["Users", "Deposit/User", "Fee Collected", "NII", "Profit"]].sum().reset_index()
@@ -178,7 +178,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df_yearly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Year")["Users"].sum().reindex(df_yearly_summary["Year"], fill_value=0).values
         df_yearly_summary["Total Txns"] = df_yearly_summary["Deposit Txns"] + df_yearly_summary["Payout Txns"]
         df_yearly_summary = df_yearly_summary.merge(df_default.groupby("Year")["Loss"].sum().reset_index(), on="Year", how="left")
-                st.subheader("📆 Yearly Summary")
+        st.subheader("📆 Yearly Summary")
         st.dataframe(df_yearly_summary.reset_index(drop=True))
 
         df_forecast.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Forecast")
