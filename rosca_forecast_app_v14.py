@@ -143,8 +143,8 @@ def run_forecast(config):
                                      "Users": total, "Deposit/User": deposit, "Fee %": fee_pct,
                                      "Fee Collected": fee_amt * total, "NII": nii_amt * total,
                                      "Profit": profit, "Investment": investment,
-                                     "Payout Day": payout_day, "Cash In": total * deposit,
-                                     "Cash Out": total * deposit if s == d else 0}))
+                                     "Payout Day": payout_day, "Cash In": total * deposit,,
+                                     "Cash Out": total * deposit if s == d else 0})
 
                     deposit_log.append({"Month": m + 1, "Users": total, "Deposit": investment, "NII": nii_amt * total})
                     default_log.append({"Month": m + 1, "Year": year, "Pre": pre_def, "Post": post_def, "Loss": loss_total})
