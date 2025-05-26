@@ -123,12 +123,10 @@ def run_forecast(config):
                     loss_total = pre_loss + post_loss
                     profit = gross_income - loss_total
                     investment = total * deposit
-                    roi_pct = ((profit / investment) * 100) if investment > 0 else 0
-
                     forecast.append({"Month": m + 1, "Year": year, "Duration": d, "Slab": slab, "Slot": s,
                                      "Users": total, "Deposit/User": deposit, "Fee %": fee_pct,
                                      "Fee Collected": fee_amt * total, "NII": nii_amt * total,
-                                     "Profit": profit, "Investment": investment, : roi_pct})
+                                     "Profit": profit, "Investment": investment})
 
                     deposit_log.append({"Month": m + 1, "Users": total, "Deposit": investment, "NII": nii_amt * total})
                     default_log.append({"Month": m + 1, "Pre": pre_def, "Post": post_def, "Loss": loss_total})
