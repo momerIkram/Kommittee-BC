@@ -4,7 +4,7 @@ import numpy as np
 import io
 
 st.set_page_config(layout="wide")
-st.title("📊 ROSCA Forecast App v15.6 – Multi-TAM with Slabs & Slot Fees")
+st.title("📊 ROSCA Forecast App v15.6 – Multi-TAM with Slabs & Slot Fees (No TAM Cap)")
 
 # Step 1: Scenario Selection
 scenario_count = st.sidebar.number_input("How many TAM scenarios?", min_value=1, max_value=5, value=2, step=1)
@@ -81,16 +81,9 @@ for d in [3, 4, 5, 6, 8, 10]:
 def run_forecast(config):
     months = 60
     initial_tam = int(config['total_market'] * config['tam_pct'] / 100)
-    tam_series = [initial_tam]
     new_users = [int(initial_tam * config['start_pct'] / 100)]
     rejoin_tracker = {}
     forecast = []
-
-    for m in range(1, months):
-        if m in [12, 24, 36, 48]:
-            tam_series.append(int(tam_series[-1] * (1 + config['annual_growth'] / 100)))
-        else:
-            tam_series.append(tam_series[-1])
 
     for m in range(months):
         year = m // 12 + 1
@@ -136,6 +129,7 @@ def run_forecast(config):
                         rejoin_tracker[rejoin_month] = rejoin_tracker.get(rejoin_month, 0) + total
 
         if m + 1 < months:
+            # NO CAP: Pure growth without TAM ceiling
             next_growth = int(active_total * config['monthly_growth'] / 100)
             new_users.append(next_growth)
 
@@ -155,4 +149,4 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
     for name, df in results.items():
         df.to_excel(writer, index=False, sheet_name=name[:31])
 output.seek(0)
-st.download_button("📥 Download All Scenarios (Excel)", data=output, file_name="multi_tam_forecasts_v15_6.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+st.download_button("📥 Download All Scenarios (Excel)", data=output, file_name="multi_tam_forecasts_v15_6_nocap.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
