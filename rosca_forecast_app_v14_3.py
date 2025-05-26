@@ -4,11 +4,11 @@ import numpy as np
 import io
 
 st.set_page_config(layout="wide")
-st.title("📊 ROSCA Forecast App v15.2 – Fixed TAM Growth + Yearly Duration + Slabs")
+st.title("📊 ROSCA Forecast App v15.3 – TAM, Lifecycle, YoY")
 
-# Sidebar Inputs
+# Sidebar Input Config
 with st.sidebar:
-    st.header("TAM Configuration & Growth")
+    st.header("TAM & Growth Settings")
     total_market = st.number_input("Total Market Size", value=20000000)
     tam_pct = st.slider("TAM % of Market", 1, 100, 10)
     start_pct = st.slider("Starting TAM % (Month 1)", 1, 100, 10)
@@ -20,79 +20,77 @@ with st.sidebar:
     default_rate = st.number_input("Default Rate (%)", value=1.0)
     penalty_pct = st.number_input("Pre-Payout Refund (%)", value=10.0)
 
-# Yearly Duration Share
-st.subheader("📅 Duration Share by Year")
+# Duration Allocation by Year
+st.subheader("📅 Yearly Duration Allocation (100% per Year)")
 yearly_duration_share = {}
 for y in range(1, 6):
-    with st.expander(f"Year {y} Duration Allocation"):
+    with st.expander(f"Year {y}"):
         yearly_duration_share[y] = {}
         total = 0
         for d in [3, 4, 5, 6, 8, 10]:
-            val = st.number_input(f"{d}M – Year {y}", 0, 100, 0, key=f"dur_{y}_{d}")
+            val = st.number_input(f"{d}M – Year {y}", 0, 100, 0, key=f"year_{y}_dur_{d}")
             yearly_duration_share[y][d] = val
             total += val
         if total != 100:
-            st.error(f"Year {y} ≠ 100%")
+            st.error(f"Year {y} total ≠ 100%")
 
-# Slab Distribution
+# Slab Distribution per Duration
 slabs = [1000, 2000, 5000, 10000, 15000, 20000, 25000, 50000]
 slab_map = {}
-st.subheader("💰 Slab Distribution Per Duration")
+st.subheader("💰 Slab Distribution (100% per Duration)")
 for d in [3, 4, 5, 6, 8, 10]:
     with st.expander(f"{d}M Slabs"):
         slab_map[d] = {}
         total = 0
         for s in slabs:
-            val = st.number_input(f"Slab {s}", 0, 100, 0, key=f"slab_{d}_{s}")
+            val = st.number_input(f"Slab {s} – {d}M", 0, 100, 0, key=f"slab_{d}_{s}")
             slab_map[d][s] = val
             total += val
         if total != 100:
-            st.error(f"{d}M slab share ≠ 100%")
+            st.error(f"{d}M slab total ≠ 100%")
 
 # Slot Fees
 slot_fees = {}
 st.subheader("🎯 Slot Fee Matrix")
 for d in [3, 4, 5, 6, 8, 10]:
-    with st.expander(f"{d}M Slots"):
+    with st.expander(f"{d}M Slot Fees"):
         slot_fees[d] = {}
         for s in range(1, d + 1):
             col1, col2 = st.columns([3, 1])
-            fee = col1.number_input(f"Slot {s} Fee %", 0.0, 100.0, 1.0, key=f"fee_{d}_{s}")
+            fee = col1.number_input(f"Slot {s} Fee % – {d}M", 0.0, 100.0, 1.0, key=f"fee_{d}_{s}")
             block = col2.checkbox("Block", key=f"block_{d}_{s}")
             slot_fees[d][s] = {"fee": fee, "blocked": block}
 
-# Initialize
+# Initialize Forecast Inputs
 months = 60
 initial_tam = int(total_market * tam_pct / 100)
-starting_users = int(initial_tam * start_pct / 100)
 tam_series = [initial_tam]
-new_users = [starting_users]
+new_users = [int(initial_tam * start_pct / 100)]
 rejoin_tracker = {}
-forecast, deposit_log, default_log, cohort_log = [], [], [], []
+forecast = []
+deposit_log = []
+default_log = []
+cohort_log = []
 
-# Generate TAM Growth Series
+# Calculate TAM series (annual bump)
 for m in range(1, months):
-    if m in [12, 24, 36, 48]:  # Month index = m (0-based)
+    if m in [12, 24, 36, 48]:
         tam_series.append(int(tam_series[-1] * (1 + annual_growth / 100)))
     else:
         tam_series.append(tam_series[-1])
 
-# Forecast Loop
+# Main Forecast Engine
 for m in range(months):
     year = m // 12 + 1
-    month_users = new_users[m]
+    durations = yearly_duration_share[year]
     rejoining = rejoin_tracker.get(m, 0)
-    active_total = month_users + rejoining
+    current_new = new_users[m] if m < len(new_users) else 0
+    active_total = current_new + rejoining
 
-    # Duration Share
-    for d, dur_pct in yearly_duration_share[year].items():
+    for d, dur_pct in durations.items():
         dur_users = int(active_total * dur_pct / 100)
-
-        # Slab Split
         for slab, slab_pct in slab_map[d].items():
             slab_users = int(dur_users * slab_pct / 100)
-
-            # Slot Loop
             for s, meta in slot_fees[d].items():
                 if meta["blocked"]: continue
                 fee_pct = meta["fee"]
@@ -114,7 +112,7 @@ for m in range(months):
                     "Duration": d,
                     "Slab": slab,
                     "Slot": s,
-                    "New Users": month_users,
+                    "New Users": current_new,
                     "Rejoining Users": rejoining,
                     "Active Users": total,
                     "Deposit/User": deposit,
@@ -124,11 +122,10 @@ for m in range(months):
                     "Profit": profit
                 })
 
-                # Lifecycle
+                # Lifecycle logic
                 rejoin_month = m + d + rest_period
                 if rejoin_month < months:
                     rejoin_tracker[rejoin_month] = rejoin_tracker.get(rejoin_month, 0) + total
-
                 cohort_log.append({
                     "Start": m + 1,
                     "Duration": d,
@@ -136,14 +133,12 @@ for m in range(months):
                     "Rejoin": rejoin_month + 1,
                     "Users": total
                 })
-
                 deposit_log.append({
                     "Month": m + 1,
                     "Users": total,
                     "Held": total * deposit,
                     "NII Earned": nii_amt * total
                 })
-
                 default_log.append({
                     "Month": m + 1,
                     "Users": total,
@@ -152,7 +147,7 @@ for m in range(months):
                     "Total Loss": pre_loss + post_loss
                 })
 
-    # Prepare next month's New Users
+    # New Users for next month
     if m + 1 < months:
         next_growth = int(active_total * monthly_growth / 100)
         new_users.append(next_growth)
@@ -165,7 +160,7 @@ df_deposit = pd.DataFrame(deposit_log)
 df_default = pd.DataFrame(default_log)
 df_lifecycle = pd.DataFrame(cohort_log)
 
-# Display
+# UI Display
 st.subheader("📈 Forecast Table")
 st.dataframe(df)
 st.subheader("📊 Monthly Summary")
@@ -179,7 +174,7 @@ st.dataframe(df_default)
 st.subheader("♻️ Lifecycle Log")
 st.dataframe(df_lifecycle)
 
-# Export
+# Excel Export
 output = io.BytesIO()
 with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
     df.to_excel(writer, index=False, sheet_name="Forecast")
@@ -189,4 +184,4 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
     df_default.to_excel(writer, index=False, sheet_name="Default Log")
     df_lifecycle.to_excel(writer, index=False, sheet_name="Lifecycle Log")
 output.seek(0)
-st.download_button("📥 Download Excel", data=output, file_name="rosca_forecast_v15_2.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+st.download_button("📥 Download Excel", data=output, file_name="rosca_forecast_v15_3.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
