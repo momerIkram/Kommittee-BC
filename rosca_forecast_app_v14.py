@@ -196,7 +196,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
             "Part-B Profit Share": df_yearly_summary["Profit"] * party_b_pct
         })
         st.subheader("💰 Profit Share Summary")
-        st.dataframe(df_profit_share.style.format("{:,}"))
+        st.dataframe(df_profit_share.style.format("{:,.0f}"))
 
         df_forecast.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Forecast")
         df_deposit.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Deposit")
