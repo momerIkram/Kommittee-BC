@@ -250,3 +250,43 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
 
 output.seek(0)
 st.download_button("📥 Download Forecast Excel", data=output, file_name="rosca_forecast_export.xlsx")
+
+# === 📊 VISUAL CHARTS ===
+# Simulated 60-month summary DataFrame
+df_chart = pd.DataFrame({
+    "Month": [f"Month {i+1}" for i in range(60)],
+    "Active Pools": np.random.randint(100, 1000, 60),
+    "Deposits": np.random.randint(1000000, 10000000, 60),
+    "Total Users": np.random.randint(500, 1500, 60),
+    "Profit": np.random.randint(100000, 1000000, 60)
+})
+
+# Chart 1: Active Pools + Deposits
+st.subheader("📊 Chart 1: Active Pools vs Total Deposits")
+fig1, ax1 = plt.subplots(figsize=(12, 4))
+ax2 = ax1.twinx()
+
+bars = ax1.bar(df_chart["Month"], df_chart["Active Pools"], color="skyblue", label="Active Pools")
+line = ax2.plot(df_chart["Month"], df_chart["Deposits"], color="green", label="Deposits")
+
+ax1.set_ylabel("Active Pools")
+ax2.set_ylabel("Deposits")
+ax2.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, loc: f"{int(x):,}"))
+fig1.tight_layout()
+fig1.legend(loc="lower center", bbox_to_anchor=(0.5, -0.3), ncol=2)
+st.pyplot(fig1)
+
+# Chart 2: Total Users + Profit
+st.subheader("📊 Chart 2: Total Users vs Total Profit")
+fig2, ax3 = plt.subplots(figsize=(12, 4))
+ax4 = ax3.twinx()
+
+bars2 = ax3.bar(df_chart["Month"], df_chart["Total Users"], color="cornflowerblue", label="Total Users")
+line2 = ax4.plot(df_chart["Month"], df_chart["Profit"], color="darkgreen", label="Profit")
+
+ax3.set_ylabel("Total Users")
+ax4.set_ylabel("Profit")
+ax4.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, loc: f"{int(x):,}"))
+fig2.tight_layout()
+fig2.legend(loc="lower center", bbox_to_anchor=(0.5, -0.3), ncol=2)
+st.pyplot(fig2)
