@@ -219,7 +219,7 @@ for d in durations:
         slot_distribution = {}
         slot_distribution[d] = {}
         for s in range(1, d + 1):
-                                    deposit_per_user = d * 1000  # base slab assumption for preview
+                                                deposit_per_user = d * 1000  # base slab assumption for preview
             pre_def_loss = deposit_per_user * default_rate * (default_pre_pct / 100) * (1 - penalty_pct / 100)
             post_def_loss = deposit_per_user * default_rate * (default_post_pct / 100)
             avg_nii = deposit_per_user * ((kibor + spread) / 100 / 12) * sum(range(1, d + 1)) / d
