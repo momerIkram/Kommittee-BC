@@ -52,6 +52,10 @@ yearly_duration_share = {}
 slab_map = {}
 slot_fees = {}
 slot_distribution = {}
+# Ensure slot_distribution[d] is initialized even if UI is skipped
+for d in durations:
+    if d not in slot_distribution:
+        slot_distribution[d] = {}
 
 for y in range(1, 6):
     with st.expander(f"Year {y} Duration Share"):
@@ -92,7 +96,9 @@ for d in durations:
             slot_distribution[d][s] = slot_pct
 
 for d in durations:
-    total_slot_pct = sum(slot_distribution.get(d, {}).values())
+    if d not in slot_distribution:
+        slot_distribution[d] = {}
+    total_slot_pct = sum(slot_distribution[d].values())
     if total_slot_pct != 100:
         validation_messages.append(f"⚠️ Slot distribution for {d}M totals {total_slot_pct}%. It must equal 100%.")
 
