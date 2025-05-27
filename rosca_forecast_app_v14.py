@@ -258,35 +258,64 @@ df_chart = pd.DataFrame({
     "Active Pools": np.random.randint(100, 1000, 60),
     "Deposits": np.random.randint(1000000, 10000000, 60),
     "Total Users": np.random.randint(500, 1500, 60),
-    "Profit": np.random.randint(100000, 1000000, 60)
+    "Profit": np.random.randint(100000, 1000000, 60),
+    "Year": [(i // 12) + 1 for i in range(60)]
 })
 
-# Chart 1: Active Pools + Deposits
-st.subheader("📊 Chart 1: Active Pools vs Total Deposits")
+# Chart 1: Active Pools + Deposits (Monthly)
+st.subheader("📊 Chart 1: Active Pools vs Total Deposits (Monthly)")
 fig1, ax1 = plt.subplots(figsize=(12, 4))
 ax2 = ax1.twinx()
-
-bars = ax1.bar(df_chart["Month"], df_chart["Active Pools"], color="skyblue", label="Active Pools")
-line = ax2.plot(df_chart["Month"], df_chart["Deposits"], color="green", label="Deposits")
-
+ax1.bar(df_chart["Month"], df_chart["Active Pools"], color="skyblue", label="Active Pools")
+ax2.plot(df_chart["Month"], df_chart["Deposits"], color="green", label="Deposits")
 ax1.set_ylabel("Active Pools")
 ax2.set_ylabel("Deposits")
-ax2.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, loc: f"{int(x):,}"))
+ax2.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, _: f"{int(x):,}"))
+ax1.tick_params(axis='x', labelsize=6)
 fig1.tight_layout()
 fig1.legend(loc="lower center", bbox_to_anchor=(0.5, -0.3), ncol=2)
 st.pyplot(fig1)
 
-# Chart 2: Total Users + Profit
-st.subheader("📊 Chart 2: Total Users vs Total Profit")
+# Chart 2: Total Users + Profit (Monthly)
+st.subheader("📊 Chart 2: Total Users vs Total Profit (Monthly)")
 fig2, ax3 = plt.subplots(figsize=(12, 4))
 ax4 = ax3.twinx()
-
-bars2 = ax3.bar(df_chart["Month"], df_chart["Total Users"], color="cornflowerblue", label="Total Users")
-line2 = ax4.plot(df_chart["Month"], df_chart["Profit"], color="darkgreen", label="Profit")
-
+ax3.bar(df_chart["Month"], df_chart["Total Users"], color="cornflowerblue", label="Total Users")
+ax4.plot(df_chart["Month"], df_chart["Profit"], color="darkgreen", label="Profit")
 ax3.set_ylabel("Total Users")
 ax4.set_ylabel("Profit")
-ax4.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, loc: f"{int(x):,}"))
+ax4.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, _: f"{int(x):,}"))
+ax3.tick_params(axis='x', labelsize=6)
 fig2.tight_layout()
 fig2.legend(loc="lower center", bbox_to_anchor=(0.5, -0.3), ncol=2)
 st.pyplot(fig2)
+
+# CHARTS FOR YEARS 1 TO 5
+df_yearly_chart = df_chart.groupby("Year")[["Active Pools", "Deposits", "Total Users", "Profit"]].sum().reset_index()
+df_yearly_chart["Year"] = df_yearly_chart["Year"].astype(str)
+
+# Chart 3: Active Pools + Deposits (Yearly)
+st.subheader("📊 Chart 3: Active Pools vs Total Deposits (Yearly)")
+fig3, ax5 = plt.subplots(figsize=(10, 4))
+ax6 = ax5.twinx()
+ax5.bar(df_yearly_chart["Year"], df_yearly_chart["Active Pools"], color="lightblue", label="Active Pools")
+ax6.plot(df_yearly_chart["Year"], df_yearly_chart["Deposits"], color="green", marker='o', label="Deposits")
+ax5.set_ylabel("Active Pools")
+ax6.set_ylabel("Deposits")
+ax6.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, _: f"{int(x):,}"))
+fig3.tight_layout()
+fig3.legend(loc="lower center", bbox_to_anchor=(0.5, -0.3), ncol=2)
+st.pyplot(fig3)
+
+# Chart 4: Total Users + Profit (Yearly)
+st.subheader("📊 Chart 4: Total Users vs Total Profit (Yearly)")
+fig4, ax7 = plt.subplots(figsize=(10, 4))
+ax8 = ax7.twinx()
+ax7.bar(df_yearly_chart["Year"], df_yearly_chart["Total Users"], color="cornflowerblue", label="Total Users")
+ax8.plot(df_yearly_chart["Year"], df_yearly_chart["Profit"], color="darkgreen", marker='o', label="Profit")
+ax7.set_ylabel("Total Users")
+ax8.set_ylabel("Profit")
+ax8.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, _: f"{int(x):,}"))
+fig4.tight_layout()
+fig4.legend(loc="lower center", bbox_to_anchor=(0.5, -0.3), ncol=2)
+st.pyplot(fig4)
