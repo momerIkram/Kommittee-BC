@@ -239,19 +239,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.subheader("💰 Profit Share Summary")
         st.dataframe(df_profit_share.style.format("{:,.0f}"))
 
-        # Profit Share Summary
-        df_profit_share = pd.DataFrame({
-            "Year": df_yearly_summary["Year"],
-            "Deposit": df_yearly_summary["Deposit"],
-            "NII": df_yearly_summary["NII"],
-            "Default": df_yearly_summary["Loss"],
-            "Fee": df_yearly_summary["Fee Collected"],
-            "Total Profit": df_yearly_summary["Profit"],
-            "Part-A Profit Share": df_yearly_summary["Profit"] * party_a_pct,
-            "Part-B Profit Share": df_yearly_summary["Profit"] * party_b_pct
-        })
-        st.subheader("💰 Profit Share Summary")
-        st.dataframe(df_profit_share.style.format("{:,.0f}"))
+        
         st.subheader("📆 Yearly Summary")
         st.dataframe(df_yearly_summary.style.format("{:,.0f}"))
 
