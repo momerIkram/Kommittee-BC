@@ -55,6 +55,7 @@ slab_map = {}
 slot_fees = {}
 slot_distribution = {}
 
+first_year_defaults = {}
 for y in range(1, 6):
     with st.expander(f"Year {y} Duration Share"):
         yearly_duration_share[y] = {}
@@ -62,9 +63,12 @@ for y in range(1, 6):
         for d in durations:
             d = int(d)
             key = f"yds_{y}_{d}"
-            # Auto-fill Year 2-5 from Year 1 by default unless changed manually
-            default_val = yearly_duration_share[1][d] if y > 1 and 1 in yearly_duration_share and d in yearly_duration_share[1] else 0
-            val = st.number_input(f"{d}M – Year {y} (%)", min_value=0, max_value=100, value=default_val, step=1, key=key)
+            if y == 1:
+                val = st.number_input(f"{d}M – Year {y} (%)", min_value=0, max_value=100, value=0, step=1, key=key)
+                first_year_defaults[d] = val
+            else:
+                default_val = first_year_defaults.get(d, 0)
+                val = st.number_input(f"{d}M – Year {y} (%)", min_value=0, max_value=100, value=default_val, step=1, key=key)
             yearly_duration_share[y][d] = val
             total_dur_share += val
         if total_dur_share > 100:
