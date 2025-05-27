@@ -2,186 +2,229 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import io
+import matplotlib.pyplot as plt
 
+# === SCENARIO & UI SETUP ===
 st.set_page_config(layout="wide")
-st.title("📊 ROSCA Forecast App v15.3 – TAM, Lifecycle, YoY")
+st.title("📊 ROSCA Forecast App v15 – Full Implementation")
 
-# Sidebar Input Config
-with st.sidebar:
-    st.header("TAM & Growth Settings")
-    total_market = st.number_input("Total Market Size", value=20000000)
-    tam_pct = st.slider("TAM % of Market", 1, 100, 10)
-    start_pct = st.slider("Starting TAM % (Month 1)", 1, 100, 10)
-    monthly_growth = st.number_input("Monthly Growth Rate (%)", value=2.0)
-    annual_growth = st.number_input("Annual TAM Growth (%)", value=5.0)
-    rest_period = st.number_input("Rest Period (months)", min_value=0, value=1)
-    kibor = st.number_input("KIBOR (%)", value=11.0)
-    spread = st.number_input("Spread (%)", value=5.0)
-    default_rate = st.number_input("Default Rate (%)", value=1.0)
-    penalty_pct = st.number_input("Pre-Payout Refund (%)", value=10.0)
+scenarios = []
+scenario_count = st.sidebar.number_input("Number of Scenarios", min_value=1, max_value=3, value=1)
 
-# Duration Allocation by Year
-st.subheader("📅 Yearly Duration Allocation (100% per Year)")
-yearly_duration_share = {}
-for y in range(1, 6):
-    with st.expander(f"Year {y}"):
-        yearly_duration_share[y] = {}
-        total = 0
-        for d in [3, 4, 5, 6, 8, 10]:
-            val = st.number_input(f"{d}M – Year {y}", 0, 100, 0, key=f"year_{y}_dur_{d}")
-            yearly_duration_share[y][d] = val
-            total += val
-        if total != 100:
-            st.error(f"Year {y} total ≠ 100%")
+for i in range(scenario_count):
+    with st.sidebar.expander(f"Scenario {i+1} Settings"):
+        name = st.text_input(f"Scenario Name {i+1}", value=f"Scenario {i+1}", key=f"name_{i}")
+        total_market = st.number_input("Total Market Size", value=20000000, key=f"market_{i}")
+        tam_pct = st.slider("TAM % of Market", 1, 100, 10, key=f"tam_pct_{i}")
+        start_pct = st.slider("Starting TAM % (Month 1)", 1, 100, 10, key=f"start_pct_{i}")
+        monthly_growth = st.number_input("Monthly Growth Rate (%)", value=2.0, key=f"growth_{i}")
+        annual_growth = st.number_input("Annual TAM Growth (%)", value=5.0, key=f"annual_{i}")
+        cap_tam = st.checkbox("Cap TAM Growth?", value=False, key=f"cap_toggle_{i}")
 
-# Slab Distribution per Duration
-slabs = [1000, 2000, 5000, 10000, 15000, 20000, 25000, 50000]
-slab_map = {}
-st.subheader("💰 Slab Distribution (100% per Duration)")
-for d in [3, 4, 5, 6, 8, 10]:
-    with st.expander(f"{d}M Slabs"):
-        slab_map[d] = {}
-        total = 0
-        for s in slabs:
-            val = st.number_input(f"Slab {s} – {d}M", 0, 100, 0, key=f"slab_{d}_{s}")
-            slab_map[d][s] = val
-            total += val
-        if total != 100:
-            st.error(f"{d}M slab total ≠ 100%")
+        scenarios.append({
+            "name": name,
+            "total_market": total_market,
+            "tam_pct": tam_pct,
+            "start_pct": start_pct,
+            "monthly_growth": monthly_growth,
+            "annual_growth": annual_growth,
+            "cap_tam": cap_tam
+        })
 
-# Slot Fees
-slot_fees = {}
-st.subheader("🎯 Slot Fee Matrix")
-for d in [3, 4, 5, 6, 8, 10]:
-    with st.expander(f"{d}M Slot Fees"):
-        slot_fees[d] = {}
-        for s in range(1, d + 1):
-            col1, col2 = st.columns([3, 1])
-            fee = col1.number_input(f"Slot {s} Fee % – {d}M", 0.0, 100.0, 1.0, key=f"fee_{d}_{s}")
-            block = col2.checkbox("Block", key=f"block_{d}_{s}")
-            slot_fees[d][s] = {"fee": fee, "blocked": block}
+# === GLOBAL INPUTS ===
+collection_day = st.sidebar.number_input("Collection Day of Month", min_value=1, max_value=28, value=1)
+payout_day = st.sidebar.number_input("Payout Day of Month", min_value=1, max_value=28, value=20)
+profit_split = st.sidebar.slider("Profit Share for Party A (%)", 0, 100, 50)
+party_a_pct = profit_split / 100
+party_b_pct = 1 - party_a_pct
+kibor = st.sidebar.number_input("KIBOR (%)", value=11.0)
+spread = st.sidebar.number_input("Spread (%)", value=5.0)
+rest_period = st.sidebar.number_input("Rest Period (months)", value=1)
+default_rate = st.sidebar.number_input("Default Rate (%)", value=1.0)
+default_pre_pct = st.sidebar.slider("Pre-Payout Default %", 0, 100, 50)
+default_post_pct = 100 - default_pre_pct
+penalty_pct = st.sidebar.number_input("Pre-Payout Refund (%)", value=10.0)
 
-# Initialize Forecast Inputs
-months = 60
-initial_tam = int(total_market * tam_pct / 100)
-tam_series = [initial_tam]
-new_users = [int(initial_tam * start_pct / 100)]
-rejoin_tracker = {}
-forecast = []
-deposit_log = []
-default_log = []
-cohort_log = []
+# === DURATION/SLAB/SLOT CONFIGURATION ===
 
-# Calculate TAM series (annual bump)
-for m in range(1, months):
-    if m in [12, 24, 36, 48]:
-        tam_series.append(int(tam_series[-1] * (1 + annual_growth / 100)))
+# === RUN FORECAST AND DISPLAY ===
+from matplotlib.ticker import FuncFormatter
+
+if st.button("Run Forecast"):
+    if validation_messages:
+        for msg in validation_messages:
+            st.error(msg)
     else:
-        tam_series.append(tam_series[-1])
+        forecasts = generate_forecast(scenarios, durations, slab_map, slot_fees, slot_distribution, yearly_duration_share)
+        summaries = summarize_forecast(forecasts)
 
-# Main Forecast Engine
-for m in range(months):
-    year = m // 12 + 1
-    durations = yearly_duration_share[year]
-    rejoining = rejoin_tracker.get(m, 0)
-    current_new = new_users[m] if m < len(new_users) else 0
-    active_total = current_new + rejoining
+        for i, df in enumerate(forecasts):
+            st.subheader(f"📘 {scenarios[i]['name']} Forecast Table")
+            st.dataframe(df)
+            st.subheader("📊 Monthly Summary")
+            st.dataframe(summaries[i]['monthly'])
+            st.subheader("📆 Yearly Summary")
+            st.dataframe(summaries[i]['yearly'])
 
-    for d, dur_pct in durations.items():
-        dur_users = int(active_total * dur_pct / 100)
-        for slab, slab_pct in slab_map[d].items():
-            slab_users = int(dur_users * slab_pct / 100)
-            for s, meta in slot_fees[d].items():
-                if meta["blocked"]: continue
-                fee_pct = meta["fee"]
-                deposit = slab * d
-                fee_amt = deposit * (fee_pct / 100)
-                nii_amt = deposit * ((kibor + spread) / 100 / 12)
-                total = slab_users
+        excel_data = export_forecast_to_excel(forecasts, summaries)
+        st.download_button(
+            label="📥 Download Excel Report",
+            data=excel_data,
+            file_name="rosca_forecast_v15.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
-                # Defaults
-                pre_def = int(total * default_rate / 200)
-                post_def = int(total * default_rate / 200)
-                pre_loss = pre_def * deposit * (1 - penalty_pct / 100)
-                post_loss = post_def * deposit
-                profit = fee_amt * total + nii_amt * total - pre_loss - post_loss
+        # Display chart for Profit and NII trends
+        st.subheader("📈 Profit & NII Trends")
+        fig, ax = plt.subplots()
+        for i, summary in enumerate(summaries):
+            monthly = summary['monthly']
+            ax.plot(monthly['Month'], monthly['Profit'], label=f"{scenarios[i]['name']} – Profit")
+            ax.plot(monthly['Month'], monthly['NII'], linestyle='--', label=f"{scenarios[i]['name']} – NII")
+        ax.set_xlabel("Month")
+        ax.set_ylabel("Amount (PKR)")
+        ax.set_title("Monthly Profit and NII Over Time")
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x):,}"))
+        ax.legend()
+        st.pyplot(fig)
 
-                forecast.append({
-                    "Month": m + 1,
-                    "Year": year,
-                    "Duration": d,
-                    "Slab": slab,
-                    "Slot": s,
-                    "New Users": current_new,
-                    "Rejoining Users": rejoining,
-                    "Active Users": total,
-                    "Deposit/User": deposit,
-                    "Fee %": fee_pct,
-                    "Fee Collected": fee_amt * total,
-                    "NII": nii_amt * total,
-                    "Profit": profit
-                })
+        # Display chart for Cash In/Out
+        st.subheader("💸 Cash In vs Cash Out")
+        fig2, ax2 = plt.subplots()
+        for i, summary in enumerate(summaries):
+            monthly = summary['monthly']
+            ax2.plot(monthly['Month'], monthly['Cash In'], label=f"{scenarios[i]['name']} – Cash In")
+            ax2.plot(monthly['Month'], monthly['Cash Out'], linestyle='--', label=f"{scenarios[i]['name']} – Cash Out")
+        ax2.set_xlabel("Month")
+        ax2.set_ylabel("Amount (PKR)")
+        ax2.set_title("Monthly Cash Flow")
+        ax2.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x):,}"))
+        ax2.legend()
+        st.pyplot(fig2)
 
-                # Lifecycle logic
-                rejoin_month = m + d + rest_period
-                if rejoin_month < months:
-                    rejoin_tracker[rejoin_month] = rejoin_tracker.get(rejoin_month, 0) + total
-                cohort_log.append({
-                    "Start": m + 1,
-                    "Duration": d,
-                    "Rest": rest_period,
-                    "Rejoin": rejoin_month + 1,
-                    "Users": total
-                })
-                deposit_log.append({
-                    "Month": m + 1,
-                    "Users": total,
-                    "Held": total * deposit,
-                    "NII Earned": nii_amt * total
-                })
-                default_log.append({
-                    "Month": m + 1,
-                    "Users": total,
-                    "Pre Loss": pre_loss,
-                    "Post Loss": post_loss,
-                    "Total Loss": pre_loss + post_loss
-                })
+# === FORECAST FUNCTIONS ===
 
-    # New Users for next month
-    if m + 1 < months:
-        next_growth = int(active_total * monthly_growth / 100)
-        new_users.append(next_growth)
+def summarize_forecast(forecasts):
+    summaries = []
+    for df in forecasts:
+        monthly = df.groupby(["Scenario", "Month"])[["Users", "Cash In", "Cash Out", "Fee Collected", "NII", "Default Loss", "Profit"]].sum().reset_index()
+        yearly = df.groupby(["Scenario", "Year"])[["Users", "Cash In", "Cash Out", "Fee Collected", "NII", "Default Loss", "Profit"]].sum().reset_index()
+        summaries.append({"monthly": monthly, "yearly": yearly})
+    return summaries
 
-# DataFrames
-df = pd.DataFrame(forecast)
-monthly_summary = df.groupby("Month")[["Active Users", "Fee Collected", "NII", "Profit"]].sum().reset_index()
-yearly_summary = df.groupby("Year")[["Active Users", "Fee Collected", "NII", "Profit"]].sum().reset_index()
-df_deposit = pd.DataFrame(deposit_log)
-df_default = pd.DataFrame(default_log)
-df_lifecycle = pd.DataFrame(cohort_log)
+def export_forecast_to_excel(forecasts, summaries):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        for i, df in enumerate(forecasts):
+            df.to_excel(writer, index=False, sheet_name=f"Forecast_{i+1}")
+            summaries[i]['monthly'].to_excel(writer, index=False, sheet_name=f"Monthly_{i+1}")
+            summaries[i]['yearly'].to_excel(writer, index=False, sheet_name=f"Yearly_{i+1}")
 
-# UI Display
-st.subheader("📈 Forecast Table")
-st.dataframe(df)
-st.subheader("📊 Monthly Summary")
-st.dataframe(monthly_summary)
-st.subheader("📆 Yearly Summary")
-st.dataframe(yearly_summary)
-st.subheader("🏦 Deposit Log")
-st.dataframe(df_deposit)
-st.subheader("🚫 Default Summary")
-st.dataframe(df_default)
-st.subheader("♻️ Lifecycle Log")
-st.dataframe(df_lifecycle)
+        # Add charts
+        workbook = writer.book
+        for i, summary in enumerate(summaries):
+            worksheet = writer.sheets[f"Monthly_{i+1}"]
+            chart = workbook.add_chart({'type': 'line'})
+            chart.add_series({
+                'name':       f"=Monthly_{i+1}!$E$1",
+                'categories': f"=Monthly_{i+1}!$B$2:$B${len(summary['monthly']) + 1}",
+                'values':     f"=Monthly_{i+1}!$E$2:$E${len(summary['monthly']) + 1}",
+            })
+            chart.set_title({'name': 'Profit Trend'})
+            chart.set_x_axis({'name': 'Month'})
+            chart.set_y_axis({'name': 'PKR'})
+            worksheet.insert_chart('K2', chart)
 
-# Excel Export
-output = io.BytesIO()
-with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-    df.to_excel(writer, index=False, sheet_name="Forecast")
-    monthly_summary.to_excel(writer, index=False, sheet_name="Monthly Summary")
-    yearly_summary.to_excel(writer, index=False, sheet_name="Yearly Summary")
-    df_deposit.to_excel(writer, index=False, sheet_name="Deposit Log")
-    df_default.to_excel(writer, index=False, sheet_name="Default Log")
-    df_lifecycle.to_excel(writer, index=False, sheet_name="Lifecycle Log")
-output.seek(0)
-st.download_button("📥 Download Excel", data=output, file_name="rosca_forecast_v15_3.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            # Optional: add breakeven analysis placeholder
+            worksheet.write("J1", "Breakeven Indicator")
+            worksheet.write("J2", "Flag when Profit < 0")
+
+    output.seek(0)
+    return output
+def generate_forecast(scenarios, durations, slab_map, slot_fees, slot_distribution, yearly_duration_share):
+    forecasts = []
+    for scenario in scenarios:
+        rows = []
+        tam = int((scenario['total_market'] * scenario['tam_pct']) / 100)
+        active_users = int(tam * scenario['start_pct'] / 100)
+        for month in range(1, 61):
+            year = (month - 1) // 12 + 1
+            if month % 12 == 1 and month > 1:
+                if scenario['cap_tam']:
+                    tam = tam  # no change
+                else:
+                    tam = int(tam * (1 + scenario['annual_growth'] / 100))
+            new_users = int(active_users * (scenario['monthly_growth'] / 100))
+            active_users += new_users
+
+            for d in yearly_duration_share.get(year, {}):
+                dur_share = yearly_duration_share[year][d] / 100
+                dur_users = int(active_users * dur_share)
+                for slab, slab_pct in slab_map[d].items():
+                    slab_users = int(dur_users * slab_pct / 100)
+                    deposit = slab * d
+                    for s in range(1, d + 1):
+                        if slot_fees[d][s]['blocked']:
+                            continue
+                        slot_share = slot_distribution[d].get(s, 0) / 100
+                        users = int(slab_users * slot_share)
+                        fee_pct = slot_fees[d][s]['fee'] / 100
+                        fee_amt = users * deposit * fee_pct
+                        cash_in = users * slab
+                        cash_out = users * deposit if s == d else 0
+                        held_days = max(payout_day - collection_day, 1)
+                        nii_amt = users * deposit * ((kibor + spread) / 100 / 365) * held_days
+                        defaults = users * default_rate / 100
+                        default_loss = defaults * deposit
+                        profit = fee_amt + nii_amt - default_loss
+                        rows.append({
+                            "Scenario": scenario['name'], "Month": month, "Year": year, "Duration": d,
+                            "Slab": slab, "Slot": s, "Users": users, "Deposit": deposit, "Fee %": fee_pct * 100,
+                            "Fee Collected": fee_amt, "Cash In": cash_in, "Cash Out": cash_out,
+                            "NII": nii_amt, "Default Loss": default_loss, "Profit": profit
+                        })
+        forecasts.append(pd.DataFrame(rows))
+    return forecasts
+slot_buffer_warning = []
+validation_messages = []
+durations = st.multiselect("Select Durations (months)", [3, 4, 5, 6, 8, 10], default=[3, 4, 6])
+yearly_duration_share = {}
+slab_map = {}
+slot_fees = {}
+
+for y in range(1, 6):
+    with st.expander(f"Year {y} Duration Share"):
+        yearly_duration_share[y] = {}
+        total_dur_share = 0
+        for d in durations:
+            val = st.slider(f"{d}M – Year {y}", 0, 100, 0, key=f"yds_{y}_{d}")
+            yearly_duration_share[y][d] = val
+            total_dur_share += val
+        if total_dur_share != 100:
+            validation_messages.append(f"⚠️ Year {y} duration share total is {total_dur_share}%. It must equal 100%.")
+
+for d in durations:
+    with st.expander(f"{d}M Slab Distribution"):
+        slab_map[d] = {}
+        total_slab_pct = 0
+        for slab in [1000, 2000, 5000, 10000, 15000, 20000, 25000, 50000]:
+            val = st.slider(f"Slab {slab} – {d}M", 0, 100, 0, key=f"slab_{d}_{slab}")
+            slab_map[d][slab] = val
+            total_slab_pct += val
+        if total_slab_pct != 100:
+            validation_messages.append(f"⚠️ Slab distribution for {d}M totals {total_slab_pct}%. It must equal 100%.")
+
+    with st.expander(f"{d}M Slot Fees & Blocking"):
+        slot_fees[d] = {}
+        slot_distribution = {}
+        slot_distribution[d] = {}
+        for s in range(1, d + 1):
+            deposit_per_user = d * 1000  # base slab assumption for preview
+                        avg_nii = deposit_per_user * ((kibor + spread) / 100 / 12) * sum(range(1, d + 1)) / d
+            avg_loss = (pre_def_loss + post_def_loss) / 100
+            suggested_fee_pct = ((avg_nii + avg_loss) / deposit_per_user) * 100
+            fee = st.number_input(f"Slot {s} Fee %", 0.0, 100.0, 1.0, key=f"fee_{d}_{s}", help=f"Suggested ≥ {suggested_fee_pct:.2f}% to break even on NII + default")
+            blocked = st.checkbox(f"Block Slot {s}", key=f"block_{d}_{s}")
+            slot_fees[d][s] = {"fee": fee, "blocked": blocked}
+            slot_pct = st.slider(f"Slot {s} % of Users", 0, 100, 0, key=f"slot_pct_{d}_{s}")
+            slot_distribution[d][s] = slot_pct
