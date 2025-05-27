@@ -254,7 +254,7 @@ st.download_button("📥 Download Forecast Excel", data=output, file_name="rosca
 # === 📊 VISUAL CHARTS ===
 # Simulated 60-month summary DataFrame
 df_chart = pd.DataFrame({
-    "Month": [str(i + 1) for i in range(60)],
+    "Month": list(range(1, 61)),
     "Active Pools": np.random.randint(100, 1000, 60),
     "Deposits": np.random.randint(1000000, 10000000, 60),
     "Total Users": np.random.randint(500, 1500, 60),
@@ -271,7 +271,7 @@ ax2.plot(df_chart["Month"], df_chart["Deposits"], color="green", label="Deposits
 ax1.set_ylabel("Active Pools")
 ax2.set_ylabel("Deposits")
 ax2.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, _: f"{int(x):,}"))
-ax1.tick_params(axis='x', labelsize=6)
+ax1.tick_params(axis='x', labelsize=6, rotation=0)
 fig1.tight_layout()
 fig1.legend(loc="lower center", bbox_to_anchor=(0.5, -0.3), ncol=2)
 st.pyplot(fig1)
@@ -280,13 +280,15 @@ st.pyplot(fig1)
 st.subheader("📊 Chart 2: Total Users vs Total Profit (Monthly)")
 fig2, ax3 = plt.subplots(figsize=(12, 4))
 ax4 = ax3.twinx()
+max_users = df_chart["Total Users"].max()
 ax3.bar(df_chart["Month"], df_chart["Total Users"], color="cornflowerblue", label="Total Users")
+ax3.set_ylim(0, max(1000, max_users * 1.1))
 ax3.set_ylim(0, df_chart["Total Users"].max() * 1.1)
 ax4.plot(df_chart["Month"], df_chart["Profit"], color="darkgreen", label="Profit")
 ax3.set_ylabel("Total Users")
 ax4.set_ylabel("Profit")
 ax4.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, _: f"{int(x):,}"))
-ax3.tick_params(axis='x', labelsize=6)
+ax3.tick_params(axis='x', labelsize=6, rotation=0)
 fig2.tight_layout()
 fig2.legend(loc="lower center", bbox_to_anchor=(0.5, -0.3), ncol=2)
 st.pyplot(fig2)
