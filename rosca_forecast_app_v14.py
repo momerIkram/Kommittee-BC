@@ -1,15 +1,13 @@
-# 🧠 ROSCA FORECAST STREAMLIT APP — FINAL FIXED VERSION
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import io
+import matplotlib.pyplot as plt
 
-# === PAGE SETUP ===
+# === SCENARIO & UI SETUP ===
 st.set_page_config(layout="wide")
 st.title("📊BACHAT-KOMMITTEE Business Case/Pricing")
 
-# === SCENARIO CONFIG ===
 scenarios = []
 scenario_count = st.sidebar.number_input("Number of Scenarios", min_value=1, max_value=3, value=1)
 
@@ -33,7 +31,7 @@ for i in range(scenario_count):
             "cap_tam": cap_tam
         })
 
-# === GLOBAL CONFIG ===
+# === GLOBAL INPUTS ===
 collection_day = st.sidebar.number_input("Collection Day of Month", min_value=1, max_value=28, value=1)
 payout_day = st.sidebar.number_input("Payout Day of Month", min_value=1, max_value=28, value=20)
 profit_split = st.sidebar.number_input("Profit Share for Party A (%)", min_value=0, max_value=100, value=50)
@@ -47,7 +45,7 @@ default_pre_pct = st.sidebar.number_input("Pre-Payout Default %", min_value=0, m
 default_post_pct = 100 - default_pre_pct
 penalty_pct = st.sidebar.number_input("Pre-Payout Refund (%)", value=10.0)
 
-# === CONFIGURATION INPUTS ===
+# === DURATION/SLAB/SLOT CONFIGURATION ===
 validation_messages = []
 durations = st.multiselect("Select Durations (months)", [3, 4, 5, 6, 8, 10], default=[3, 4, 6])
 yearly_duration_share = {}
@@ -101,7 +99,12 @@ for d in durations:
 
             fee = st.number_input(f"Slot {s} Fee %", 0.0, 100.0, 1.0, key=key_fee, help=f"Suggested ≥ {suggested_fee_pct:.2f}%")
             blocked = st.checkbox(f"Block Slot {s}", key=key_block)
-            slot_pct = st.number_input(f"Slot {s} % of Users (Duration {d}M)", 0, 100, 0, key=key_pct)
+            slot_pct = st.number_input(
+                label=f"Slot {s} % of Users (Duration {d}M)",
+                min_value=0, max_value=100, value=0,
+                step=1,
+                key=key_pct
+            )
 
             slot_fees[d][s] = {"fee": fee, "blocked": blocked}
             slot_distribution[d][s] = slot_pct
@@ -117,7 +120,7 @@ if validation_messages:
         st.warning(msg)
     st.stop()
 
-# === FORECAST FUNCTION ===
+# === FORECASTING LOGIC ===
 def run_forecast(config):
     months = 60
     initial_tam = int(config['total_market'] * config['tam_pct'] / 100)
@@ -163,14 +166,12 @@ def run_forecast(config):
                     profit = gross_income - loss_total
                     investment = total * deposit
 
-                    forecast.append({
-                        "Month": m + 1, "Year": year, "Duration": d, "Slab": slab, "Slot": s,
-                        "Users": total, "Deposit/User": deposit, "Fee %": fee_pct,
-                        "Fee Collected": fee_amt * total, "NII": nii_amt * total,
-                        "Profit": profit, "Held Capital": investment,
-                        "Payout Day": payout_day, "Cash In": total * deposit,
-                        "Cash Out": total * deposit if s == d else 0
-                    })
+                    forecast.append({"Month": m + 1, "Year": year, "Duration": d, "Slab": slab, "Slot": s,
+                                     "Users": total, "Deposit/User": deposit, "Fee %": fee_pct,
+                                     "Fee Collected": fee_amt * total, "NII": nii_amt * total,
+                                     "Profit": profit, "Held Capital": investment,
+                                     "Payout Day": payout_day, "Cash In": total * deposit,
+                                     "Cash Out": total * deposit if s == d else 0})
 
                     deposit_log.append({"Month": m + 1, "Users": total, "Deposit": investment, "NII": nii_amt * total})
                     default_log.append({"Month": m + 1, "Year": year, "Pre": pre_def, "Post": post_def, "Loss": loss_total})
@@ -197,7 +198,7 @@ def run_forecast(config):
 
     return pd.DataFrame(forecast), pd.DataFrame(deposit_log), pd.DataFrame(default_log), pd.DataFrame(lifecycle)
 
-# === EXPORT & DISPLAY ===
+# === EXPORT AND DISPLAY ===
 output = io.BytesIO()
 with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
     for scenario in scenarios:
@@ -207,23 +208,23 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df_forecast, df_deposit, df_default, df_lifecycle = run_forecast(config)
 
         st.subheader(f"📘 {scenario['name']} Forecast Table")
-        st.dataframe(df_forecast.style.format("{:,.0f}"))
+        st.table(df_forecast.style.format("{:,.0f}"))
 
+        # Monthly Summary
         df_monthly_summary = df_forecast.groupby("Month")[["Users", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
         df_monthly_summary["Deposit"] = df_monthly_summary["Cash In"]
         df_monthly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Month")["Users"].sum().reindex(df_monthly_summary["Month"], fill_value=0).values
         df_monthly_summary["Total Txns"] = df_monthly_summary["Users"] + df_monthly_summary["Payout Txns"]
         df_monthly_summary = df_monthly_summary.merge(df_default.groupby("Month")["Loss"].sum().reset_index(), on="Month", how="left")
         st.subheader("📊 Monthly Summary")
-        st.dataframe(df_monthly_summary.style.format("{:,.0f}"))
+        st.table(df_monthly_summary.style.format("{:,.0f}"))
 
+        # Yearly Summary
         df_yearly_summary = df_forecast.groupby("Year")[["Users", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
         df_yearly_summary["Deposit"] = df_yearly_summary["Cash In"]
         df_yearly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Year")["Users"].sum().reindex(df_yearly_summary["Year"], fill_value=0).values
         df_yearly_summary["Total Txns"] = df_yearly_summary["Users"] + df_yearly_summary["Payout Txns"]
         df_yearly_summary = df_yearly_summary.merge(df_default.groupby("Year")["Loss"].sum().reset_index(), on="Year", how="left")
-        st.subheader("📆 Yearly Summary")
-        st.dataframe(df_yearly_summary.style.format("{:,.0f}"))
 
         df_profit_share = pd.DataFrame({
             "Year": df_yearly_summary["Year"],
@@ -236,9 +237,24 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
             "Part-B Profit Share": df_yearly_summary["Profit"] * party_b_pct
         })
         st.subheader("💰 Profit Share Summary")
-        st.dataframe(df_profit_share.style.format("{:,.0f}"))
+        st.table(df_profit_share.style.format("{:,.0f}"))
 
-        # Write to Excel
+        # Profit Share Summary
+        df_profit_share = pd.DataFrame({
+            "Year": df_yearly_summary["Year"],
+            "Deposit": df_yearly_summary["Deposit"],
+            "NII": df_yearly_summary["NII"],
+            "Default": df_yearly_summary["Loss"],
+            "Fee": df_yearly_summary["Fee Collected"],
+            "Total Profit": df_yearly_summary["Profit"],
+            "Part-A Profit Share": df_yearly_summary["Profit"] * party_a_pct,
+            "Part-B Profit Share": df_yearly_summary["Profit"] * party_b_pct
+        })
+        st.subheader("💰 Profit Share Summary")
+        st.dataframe(df_profit_share.style.format("{:,.0f}"))
+        st.subheader("📆 Yearly Summary")
+        st.table(df_yearly_summary.style.format("{:,.0f}"))
+
         df_forecast.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Forecast")
         df_deposit.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Deposit")
         df_default.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Defaults")
