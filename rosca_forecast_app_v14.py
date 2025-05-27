@@ -62,10 +62,10 @@ for y in range(1, 6):
         yearly_duration_share[y] = {}
         total_dur_share = 0
         for d in durations:
-            val = st.slider(f"{d}M – Year {y}", 0, 100, 0, key=f"yds_{y}_{d}")
+            val = st.number_input(f"{d}M – Year {y} (%)", min_value=0, max_value=100, value=0, step=1, key=f"yds_{y}_{d}")
             yearly_duration_share[y][d] = val
             total_dur_share += val
-        if total_dur_share != 100:
+        if total_dur_share > 100:
             validation_messages.append(f"⚠️ Year {y} duration share total is {total_dur_share}%. It must equal 100%.")
 
 for d in durations:
@@ -73,10 +73,10 @@ for d in durations:
         slab_map[d] = {}
         total_slab_pct = 0
         for slab in [1000, 2000, 5000, 10000, 15000, 20000, 25000, 50000]:
-            val = st.slider(f"Slab {slab} – {d}M", 0, 100, 0, key=f"slab_{d}_{slab}")
+            val = st.number_input(f"Slab {slab} – {d}M (%)", min_value=0, max_value=100, value=0, step=1, key=f"slab_{d}_{slab}")
             slab_map[d][slab] = val
             total_slab_pct += val
-        if total_slab_pct != 100:
+        if total_slab_pct > 100:
             validation_messages.append(f"⚠️ Slab distribution for {d}M totals {total_slab_pct}%. It must equal 100%.")
 
     with st.expander(f"{d}M Slot Fees & Blocking"):
@@ -104,7 +104,7 @@ for d in durations:
     if d not in slot_distribution:
         slot_distribution[d] = {}
     total_slot_pct = sum(slot_distribution[d].values())
-    if total_slot_pct != 100:
+    if total_slot_pct > 100:
         validation_messages.append(f"⚠️ Slot distribution for {d}M totals {total_slot_pct}%. It must equal 100%.")
 
 if validation_messages:
