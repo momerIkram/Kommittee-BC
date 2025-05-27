@@ -254,7 +254,7 @@ st.download_button("📥 Download Forecast Excel", data=output, file_name="rosca
 # === 📊 VISUAL CHARTS ===
 # Simulated 60-month summary DataFrame
 df_chart = pd.DataFrame({
-    "Month": [f"Month {i+1}" for i in range(60)],
+    "Month": [str(i + 1) for i in range(60)],
     "Active Pools": np.random.randint(100, 1000, 60),
     "Deposits": np.random.randint(1000000, 10000000, 60),
     "Total Users": np.random.randint(500, 1500, 60),
@@ -281,6 +281,7 @@ st.subheader("📊 Chart 2: Total Users vs Total Profit (Monthly)")
 fig2, ax3 = plt.subplots(figsize=(12, 4))
 ax4 = ax3.twinx()
 ax3.bar(df_chart["Month"], df_chart["Total Users"], color="cornflowerblue", label="Total Users")
+ax3.set_ylim(0, df_chart["Total Users"].max() * 1.1)
 ax4.plot(df_chart["Month"], df_chart["Profit"], color="darkgreen", label="Profit")
 ax3.set_ylabel("Total Users")
 ax4.set_ylabel("Profit")
