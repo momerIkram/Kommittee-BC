@@ -1,4 +1,21 @@
 import streamlit as st
+st.set_page_config(layout="wide", page_title="ROSCA Forecast App", page_icon="📊", initial_sidebar_state="expanded")
+st.markdown("""
+    <style>
+    body {
+        background-color: #0e1117;
+        color: #fafafa;
+    }
+    .stApp, .st-cb, .st-bx, .st-dh, .st-b6, .st-ci, .st-ag {
+        background-color: #0e1117 !important;
+        color: #fafafa !important;
+    }
+    .stDataFrame thead tr th {
+        background-color: #262730 !important;
+        color: #fafafa !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 import pandas as pd
 import numpy as np
 import io
@@ -264,7 +281,7 @@ df_chart = pd.DataFrame({
 
 # Chart 1: Active Pools + Deposits (Monthly)
 st.subheader("📊 Chart 1: Active Pools vs Total Deposits (Monthly)")
-fig1, ax1 = plt.subplots(figsize=(10, 3.2), dpi=100, facecolor='#f9f9f9')
+fig1, ax1 = plt.subplots(figsize=(6, 2), dpi=100, facecolor='#f9f9f9')
 fig1.patch.set_facecolor('#f8f9fa')
 ax1.set_facecolor('#ffffff')
 ax2 = ax1.twinx()
@@ -282,7 +299,7 @@ st.pyplot(fig1)
 
 # Chart 2: Total Users + Profit (Monthly)
 st.subheader("📊 Chart 2: Total Users vs Total Profit (Monthly)")
-fig2, ax3 = plt.subplots(figsize=(10, 3.2), dpi=100, facecolor='#f9f9f9')
+fig2, ax3 = plt.subplots(figsize=(6, 2), dpi=100, facecolor='#f9f9f9')
 fig2.patch.set_facecolor('#f8f9fa')
 ax3.set_facecolor('#ffffff')
 ax4 = ax3.twinx()
@@ -307,7 +324,7 @@ df_yearly_chart["Year"] = df_yearly_chart["Year"].astype(str)
 
 # Chart 3: Active Pools + Deposits (Yearly)
 st.subheader("📊 Chart 3: Active Pools vs Total Deposits (Yearly)")
-fig3, ax5 = plt.subplots(figsize=(8, 3), dpi=100, facecolor='#f9f9f9')
+fig3, ax5 = plt.subplots(figsize=(6, 2), dpi=100, facecolor='#f9f9f9')
 fig3.patch.set_facecolor('#f8f9fa')
 ax5.set_facecolor('#ffffff')
 ax6 = ax5.twinx()
@@ -324,7 +341,7 @@ st.pyplot(fig3)
 
 # Chart 4: Total Users + Profit (Yearly)
 st.subheader("📊 Chart 4: Total Users vs Total Profit (Yearly)")
-fig4, ax7 = plt.subplots(figsize=(8, 3), dpi=100, facecolor='#f9f9f9')
+fig4, ax7 = plt.subplots(figsize=(6, 2), dpi=100, facecolor='#f9f9f9')
 fig4.patch.set_facecolor('#f8f9fa')
 ax7.set_facecolor('#ffffff')
 ax8 = ax7.twinx()
