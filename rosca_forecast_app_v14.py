@@ -63,7 +63,7 @@ for y in range(1, 6):
         yearly_duration_share[y] = {}
         total_dur_share = 0
         for d in durations:
-            val = st.number_input(f"{d}M – Year {y} (%)", min_value=0, max_value=100, value=0, step=1, key=f"yds_{y}_{d}_" + str(uuid.uuid4()))
+            val = st.number_input(f"{d}M – Year {y} (%)", min_value=0, max_value=100, value=0, step=1, key=f"yds_{y}_{d}")
             yearly_duration_share[y][d] = val
             total_dur_share += val
         if total_dur_share > 100:
@@ -74,7 +74,7 @@ for d in durations:
         slab_map[d] = {}
         total_slab_pct = 0
         for slab in [1000, 2000, 5000, 10000, 15000, 20000, 25000, 50000]:
-            val = st.number_input(f"Slab {slab} – {d}M (%)", min_value=0, max_value=100, value=0, step=1, key=f"slab_{d}_{slab}_" + str(uuid.uuid4()))
+            val = st.number_input(f"Slab {slab} – {d}M (%)", min_value=0, max_value=100, value=0, step=1, key=f"slab_{d}_{slab}")
             slab_map[d][slab] = val
             total_slab_pct += val
         if total_slab_pct > 100:
@@ -97,7 +97,7 @@ for d in durations:
     label=f"Slot {s} % of Users (Duration {d}M)",
     min_value=0, max_value=100, value=0,
     step=1,
-    key=f"slot_pct_d{d}_s{s}_" + str(uuid.uuid4())
+    key=f"slot_pct_d{d}_s{s}"
 )
             slot_distribution[d][s] = slot_pct
 
