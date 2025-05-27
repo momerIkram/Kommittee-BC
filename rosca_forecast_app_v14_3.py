@@ -219,8 +219,10 @@ for d in durations:
         slot_distribution = {}
         slot_distribution[d] = {}
         for s in range(1, d + 1):
-            deposit_per_user = d * 1000  # base slab assumption for preview
-                        avg_nii = deposit_per_user * ((kibor + spread) / 100 / 12) * sum(range(1, d + 1)) / d
+                        deposit_per_user = d * 1000  # base slab assumption for preview
+            pre_def_loss = deposit_per_user * default_rate * (default_pre_pct / 100) * (1 - penalty_pct / 100)
+            post_def_loss = deposit_per_user * default_rate * (default_post_pct / 100)
+            avg_nii = deposit_per_user * ((kibor + spread) / 100 / 12) * sum(range(1, d + 1)) / ddeposit_per_user * ((kibor + spread) / 100 / 12) * sum(range(1, d + 1)) / d
             avg_loss = (pre_def_loss + post_def_loss) / 100
             suggested_fee_pct = ((avg_nii + avg_loss) / deposit_per_user) * 100
             fee = st.number_input(f"Slot {s} Fee %", 0.0, 100.0, 1.0, key=f"fee_{d}_{s}", help=f"Suggested ≥ {suggested_fee_pct:.2f}% to break even on NII + default")
