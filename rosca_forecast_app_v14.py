@@ -1,11 +1,13 @@
 import streamlit as st
+st.set_page_config(layout="wide", page_title="ROSCA Forecast App", page_icon="📊", initial_sidebar_state="expanded")
+
 import pandas as pd
 import numpy as np
 import io
 import matplotlib.pyplot as plt
 
 # === SCENARIO & UI SETUP ===
-st.set_page_config(layout="wide")
+
 st.title("📊BACHAT-KOMMITTEE Business Case/Pricing")
 
 scenarios = []
@@ -157,10 +159,10 @@ def run_forecast(config):
                     from_new = total - from_rejoin
                     rejoining -= from_rejoin
 
-                    pre_def = int(total * config['default_rate'] * default_pre_pct / 10000)
-                    post_def = int(total * config['default_rate'] * default_post_pct / 10000)
-                    pre_loss = pre_def * deposit * (1 - config['penalty_pct'] / 100)
-                    post_loss = post_def * deposit
+                    pre_def = max(0, int((config['default_rate'] / 100) * (default_pre_pct / 100) * total))
+                    post_def = max(0, int((config['default_rate'] / 100) * (default_post_pct / 100) * total))
+                    pre_loss = max(0, pre_def * deposit * (1 - config['penalty_pct'] / 100))
+                    post_loss = max(0, post_def * deposit)
                     gross_income = fee_amt * total + nii_amt * total
                     loss_total = pre_loss + post_loss
                     profit = gross_income - loss_total
