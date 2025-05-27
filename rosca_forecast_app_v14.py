@@ -246,6 +246,8 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df_yearly_summary = df_yearly_summary.merge(df_default.groupby("Year")["Loss"].sum().reset_index(), on="Year", how="left")
 
         df_profit_share = pd.DataFrame({
+            "External Capital": df_yearly_summary["External Capital"],
+            "% Loss Covered by Capital": (df_yearly_summary["External Capital"] / df_yearly_summary["Loss"]).fillna(0) * 100,
             "Year": df_yearly_summary["Year"],
             "Deposit": df_yearly_summary["Deposit"],
             "NII": df_yearly_summary["NII"],
@@ -342,6 +344,29 @@ fig3.legend(loc="lower center", bbox_to_anchor=(0.5, -0.3), ncol=2)
 st.pyplot(fig3)
 
 # Chart 4: Total Users + Profit (Yearly)
+
+# Chart 5: External Capital vs Fee & Profit (Yearly)
+st.subheader("📊 Chart 5: External Capital vs Fee & Profit (Yearly)")
+fig5, ax9 = plt.subplots(figsize=(6, 2), dpi=100, facecolor='#f9f9f9')
+fig5.patch.set_facecolor('#f8f9fa')
+ax9.set_facecolor('#ffffff')
+ax10 = ax9.twinx()
+
+ax9.bar(df_profit_share["Year"], df_profit_share["External Capital"], color="salmon", label="External Capital", edgecolor="#777", linewidth=0.5, zorder=3)
+ax10.plot(df_profit_share["Year"], df_profit_share["Fee"], color="royalblue", marker='o', label="Fee Collected", linewidth=2.5, zorder=4)
+ax10.plot(df_profit_share["Year"], df_profit_share["Total Profit"], color="darkgreen", marker='o', label="Total Profit", linewidth=2.5, linestyle='dashed', zorder=4)
+
+ax9.set_ylabel("External Capital")
+ax10.set_ylabel("Fee & Profit")
+ax9.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, _: f"{int(x):,}"))
+ax10.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, _: f"{int(x):,}"))
+fig5.tight_layout()
+fig5.patch.set_linewidth(1.5)
+fig5.patch.set_edgecolor("#ccc")
+fig5.legend(loc="lower center", bbox_to_anchor=(0.5, -0.3), ncol=3)
+st.pyplot(fig5)
+
+
 st.subheader("📊 Chart 4: Total Users vs Total Profit (Yearly)")
 fig4, ax7 = plt.subplots(figsize=(6, 2), dpi=100, facecolor='#f9f9f9')
 fig4.patch.set_facecolor('#f8f9fa')
