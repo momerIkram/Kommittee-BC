@@ -47,6 +47,51 @@ penalty_pct = st.sidebar.number_input("Pre-Payout Refund (%)", value=10.0)
 
 # === DURATION/SLAB/SLOT CONFIGURATION ===
 
+validation_messages = []
+durations = st.multiselect("Select Durations (months)", [3, 4, 5, 6, 8, 10], default=[3, 4, 6])
+yearly_duration_share = {}
+slab_map = {}
+slot_fees = {}
+slot_distribution = {}
+
+for y in range(1, 6):
+    with st.expander(f"Year {y} Duration Share"):
+        yearly_duration_share[y] = {}
+        total_dur_share = 0
+        for d in durations:
+            val = st.slider(f"{d}M – Year {y}", 0, 100, 0, key=f"yds_{y}_{d}")
+            yearly_duration_share[y][d] = val
+            total_dur_share += val
+        if total_dur_share != 100:
+            validation_messages.append(f"⚠️ Year {y} duration share total is {total_dur_share}%. It must equal 100%.")
+
+for d in durations:
+    with st.expander(f"{d}M Slab Distribution"):
+        slab_map[d] = {}
+        total_slab_pct = 0
+        for slab in [1000, 2000, 5000, 10000, 15000, 20000, 25000, 50000]:
+            val = st.slider(f"Slab {slab} – {d}M", 0, 100, 0, key=f"slab_{d}_{slab}")
+            slab_map[d][slab] = val
+            total_slab_pct += val
+        if total_slab_pct != 100:
+            validation_messages.append(f"⚠️ Slab distribution for {d}M totals {total_slab_pct}%. It must equal 100%.")
+
+    with st.expander(f"{d}M Slot Fees & Blocking"):
+        slot_fees[d] = {}
+        slot_distribution[d] = {}
+        for s in range(1, d + 1):
+            deposit_per_user = d * 1000  # base slab assumption for preview
+            pre_def_loss = deposit_per_user * default_rate * (default_pre_pct / 100) * (1 - penalty_pct / 100)
+            post_def_loss = deposit_per_user * default_rate * (default_post_pct / 100)
+            avg_nii = deposit_per_user * ((kibor + spread) / 100 / 12) * sum(range(1, d + 1)) / d
+            avg_loss = (pre_def_loss + post_def_loss) / 100
+            suggested_fee_pct = ((avg_nii + avg_loss) / deposit_per_user) * 100
+            fee = st.number_input(f"Slot {s} Fee %", 0.0, 100.0, 1.0, key=f"fee_{d}_{s}", help=f"Suggested ≥ {suggested_fee_pct:.2f}% to break even on NII + default")
+            blocked = st.checkbox(f"Block Slot {s}", key=f"block_{d}_{s}")
+            slot_fees[d][s] = {"fee": fee, "blocked": blocked}
+            slot_pct = st.slider(f"Slot {s} % of Users", 0, 100, 0, key=f"slot_pct_{d}_{s}")
+            slot_distribution[d][s] = slot_pct
+
 # === RUN FORECAST AND DISPLAY ===
 from matplotlib.ticker import FuncFormatter
 
@@ -150,9 +195,7 @@ def generate_forecast(scenarios, durations, slab_map, slot_fees, slot_distributi
         for month in range(1, 61):
             year = (month - 1) // 12 + 1
             if month % 12 == 1 and month > 1:
-                if scenario['cap_tam']:
-                    tam = tam  # no change
-                else:
+                if not scenario['cap_tam']:
                     tam = int(tam * (1 + scenario['annual_growth'] / 100))
             new_users = int(active_users * (scenario['monthly_growth'] / 100))
             active_users += new_users
@@ -185,48 +228,3 @@ def generate_forecast(scenarios, durations, slab_map, slot_fees, slot_distributi
                         })
         forecasts.append(pd.DataFrame(rows))
     return forecasts
-slot_buffer_warning = []
-validation_messages = []
-durations = st.multiselect("Select Durations (months)", [3, 4, 5, 6, 8, 10], default=[3, 4, 6])
-yearly_duration_share = {}
-slab_map = {}
-slot_fees = {}
-
-for y in range(1, 6):
-    with st.expander(f"Year {y} Duration Share"):
-        yearly_duration_share[y] = {}
-        total_dur_share = 0
-        for d in durations:
-            val = st.slider(f"{d}M – Year {y}", 0, 100, 0, key=f"yds_{y}_{d}")
-            yearly_duration_share[y][d] = val
-            total_dur_share += val
-        if total_dur_share != 100:
-            validation_messages.append(f"⚠️ Year {y} duration share total is {total_dur_share}%. It must equal 100%.")
-
-for d in durations:
-    with st.expander(f"{d}M Slab Distribution"):
-        slab_map[d] = {}
-        total_slab_pct = 0
-        for slab in [1000, 2000, 5000, 10000, 15000, 20000, 25000, 50000]:
-            val = st.slider(f"Slab {slab} – {d}M", 0, 100, 0, key=f"slab_{d}_{slab}")
-            slab_map[d][slab] = val
-            total_slab_pct += val
-        if total_slab_pct != 100:
-            validation_messages.append(f"⚠️ Slab distribution for {d}M totals {total_slab_pct}%. It must equal 100%.")
-
-    with st.expander(f"{d}M Slot Fees & Blocking"):
-        slot_fees[d] = {}
-        slot_distribution = {}
-        slot_distribution[d] = {}
-        for s in range(1, d + 1):
-                                                deposit_per_user = d * 1000  # base slab assumption for preview
-            pre_def_loss = deposit_per_user * default_rate * (default_pre_pct / 100) * (1 - penalty_pct / 100)
-            post_def_loss = deposit_per_user * default_rate * (default_post_pct / 100)
-            avg_nii = deposit_per_user * ((kibor + spread) / 100 / 12) * sum(range(1, d + 1)) / d
-            avg_loss = (pre_def_loss + post_def_loss) / 100
-            suggested_fee_pct = ((avg_nii + avg_loss) / deposit_per_user) * 100
-            fee = st.number_input(f"Slot {s} Fee %", 0.0, 100.0, 1.0, key=f"fee_{d}_{s}", help=f"Suggested ≥ {suggested_fee_pct:.2f}% to break even on NII + default")
-            blocked = st.checkbox(f"Block Slot {s}", key=f"block_{d}_{s}")
-            slot_fees[d][s] = {"fee": fee, "blocked": blocked}
-            slot_pct = st.slider(f"Slot {s} % of Users", 0, 100, 0, key=f"slot_pct_{d}_{s}")
-            slot_distribution[d][s] = slot_pct
