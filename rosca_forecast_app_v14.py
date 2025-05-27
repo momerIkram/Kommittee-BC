@@ -208,7 +208,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df_forecast, df_deposit, df_default, df_lifecycle = run_forecast(config)
 
         st.subheader(f"📘 {scenario['name']} Forecast Table")
-        st.dataframe(df_forecast)
+        st.dataframe(df_forecast.style.format("{:,.0f}"))
 
         # Monthly Summary
         df_monthly_summary = df_forecast.groupby("Month")[["Users", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
@@ -217,7 +217,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df_monthly_summary["Total Txns"] = df_monthly_summary["Users"] + df_monthly_summary["Payout Txns"]
         df_monthly_summary = df_monthly_summary.merge(df_default.groupby("Month")["Loss"].sum().reset_index(), on="Month", how="left")
         st.subheader("📊 Monthly Summary")
-        st.dataframe(df_monthly_summary)
+        st.dataframe(df_monthly_summary.style.format("{:,.0f}"))
 
         # Yearly Summary
         df_yearly_summary = df_forecast.groupby("Year")[["Users", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
@@ -225,8 +225,22 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df_yearly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Year")["Users"].sum().reindex(df_yearly_summary["Year"], fill_value=0).values
         df_yearly_summary["Total Txns"] = df_yearly_summary["Users"] + df_yearly_summary["Payout Txns"]
         df_yearly_summary = df_yearly_summary.merge(df_default.groupby("Year")["Loss"].sum().reset_index(), on="Year", how="left")
+
+        # Profit Share Summary
+        df_profit_share = pd.DataFrame({
+            "Year": df_yearly_summary["Year"],
+            "Deposit": df_yearly_summary["Deposit"],
+            "NII": df_yearly_summary["NII"],
+            "Default": df_yearly_summary["Loss"],
+            "Fee": df_yearly_summary["Fee Collected"],
+            "Total Profit": df_yearly_summary["Profit"],
+            "Part-A Profit Share": df_yearly_summary["Profit"] * party_a_pct,
+            "Part-B Profit Share": df_yearly_summary["Profit"] * party_b_pct
+        })
+        st.subheader("💰 Profit Share Summary")
+        st.dataframe(df_profit_share.style.format("{:,.0f}"))
         st.subheader("📆 Yearly Summary")
-        st.dataframe(df_yearly_summary)
+        st.dataframe(df_yearly_summary.style.format("{:,.0f}"))
 
         df_forecast.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Forecast")
         df_deposit.to_excel(writer, index=False, sheet_name=f"{scenario['name'][:28]}_Deposit")
