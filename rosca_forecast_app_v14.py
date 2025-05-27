@@ -164,11 +164,28 @@ def run_forecast(config):
                     pre_loss = max(0, pre_def * deposit * (1 - config['penalty_pct'] / 100))
                     post_loss = max(0, post_def * deposit)
                     gross_income = fee_amt * total + nii_amt * total
-                    loss_total = pre_loss + post_loss
+                    loss_total = min(total * deposit, pre_loss + post_loss)
+                    external_capital = max(0, loss_total - (fee_amt * total + nii_amt * total))
+
+                    # CASE 1: Post-payout default only (user takes full payout, then stops)
+                    if s == d:
+                        post_def = int(total * (config['default_rate'] / 100))
+                        post_loss = post_def * deposit
+                        pre_def = 0
+                        pre_loss = 0
+                        loss_total = min(total * deposit, post_loss)
+
+                    # CASE 2: Pre-payout default only (user drops after first installment, receives no payout)
+                    elif s == 1:
+                        pre_def = int(total * (config['default_rate'] / 100))
+                        pre_loss = pre_def * deposit * (1 - config['penalty_pct'] / 100)
+                        post_def = 0
+                        post_loss = 0
+                        loss_total = min(total * deposit, pre_loss)
                     profit = gross_income - loss_total
                     investment = total * deposit
 
-                    forecast.append({"Month": m + 1, "Year": year, "Duration": d, "Slab": slab, "Slot": s,
+                    forecast.append({"External Capital": external_capital,"Month": m + 1, "Year": year, "Duration": d, "Slab": slab, "Slot": s,
                                      "Users": total, "Deposit/User": deposit, "Fee %": fee_pct,
                                      "Fee Collected": fee_amt * total, "NII": nii_amt * total,
                                      "Profit": profit, "Held Capital": investment,
@@ -213,7 +230,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.dataframe(df_forecast.style.format("{:,.0f}"))
 
         # Monthly Summary
-        df_monthly_summary = df_forecast.groupby("Month")[["Users", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
+        df_monthly_summary = df_forecast.groupby("Month")[["Users", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out", "External Capital"]].sum().reset_index()
         df_monthly_summary["Deposit"] = df_monthly_summary["Cash In"]
         df_monthly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Month")["Users"].sum().reindex(df_monthly_summary["Month"], fill_value=0).values
         df_monthly_summary["Total Txns"] = df_monthly_summary["Users"] + df_monthly_summary["Payout Txns"]
@@ -222,7 +239,7 @@ with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.dataframe(df_monthly_summary.style.format("{:,.0f}"))
 
         # Yearly Summary
-        df_yearly_summary = df_forecast.groupby("Year")[["Users", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out"]].sum().reset_index()
+        df_yearly_summary = df_forecast.groupby("Year")[["Users", "Fee Collected", "NII", "Profit", "Cash In", "Cash Out", "External Capital"]].sum().reset_index()
         df_yearly_summary["Deposit"] = df_yearly_summary["Cash In"]
         df_yearly_summary["Payout Txns"] = df_forecast[df_forecast["Slot"] == df_forecast["Duration"]].groupby("Year")["Users"].sum().reindex(df_yearly_summary["Year"], fill_value=0).values
         df_yearly_summary["Total Txns"] = df_yearly_summary["Users"] + df_yearly_summary["Payout Txns"]
