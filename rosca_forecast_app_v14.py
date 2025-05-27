@@ -92,7 +92,12 @@ for d in durations:
             fee = st.number_input(f"Slot {s} Fee %", 0.0, 100.0, 1.0, key=f"fee_{d}_{s}", help=f"Suggested ≥ {suggested_fee_pct:.2f}%")
             blocked = st.checkbox(f"Block Slot {s}", key=f"block_{d}_{s}")
             slot_fees[d][s] = {"fee": fee, "blocked": blocked}
-            slot_pct = st.slider(f"Slot {s} % of Users", 0, 100, 0, key=f"slot_pct_{d}_{s}")
+            slot_pct = st.number_input(
+    label=f"Slot {s} % of Users (Duration {d}M)",
+    min_value=0, max_value=100, value=0,
+    step=1,
+    key=f"slot_pct_d{d}_s{s}"
+)
             slot_distribution[d][s] = slot_pct
 
 for d in durations:
