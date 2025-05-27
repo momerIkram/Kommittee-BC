@@ -1,21 +1,6 @@
 import streamlit as st
 st.set_page_config(layout="wide", page_title="ROSCA Forecast App", page_icon="📊", initial_sidebar_state="expanded")
-st.markdown("""
-    <style>
-    body {
-        background-color: #0e1117;
-        color: #fafafa;
-    }
-    .stApp, .st-cb, .st-bx, .st-dh, .st-b6, .st-ci, .st-ag {
-        background-color: #0e1117 !important;
-        color: #fafafa !important;
-    }
-    .stDataFrame thead tr th {
-        background-color: #262730 !important;
-        color: #fafafa !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+
 import pandas as pd
 import numpy as np
 import io
