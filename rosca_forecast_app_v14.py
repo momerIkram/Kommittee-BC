@@ -78,7 +78,7 @@ party_b_pct = 1 - party_a_pct
 kibor = st.sidebar.number_input("KIBOR (%)", value=11.0)
 spread = st.sidebar.number_input("Spread (%)", value=1.0)
 rest_period = st.sidebar.number_input("Rest Period (months)", value=1)
-default_rate = st.sidebar.number_input("Default Rate (%)", value=1.0, key="global_default_rate_final_complete", format="%.2f") # Using your file's value & key
+default_rate = st.sidebar.number_input("Default Rate (%)", value=1.0, key="global_default_rate_fixed", format="%.2f") # Using consistent key
 default_pre_pct = st.sidebar.number_input("Pre-Payout Default % (of total defaulters)", min_value=0, max_value=100, value=50)
 global_pre_payout_recovery_pct = st.sidebar.number_input(
     "Pre-Payout Default Recovery % (of Total Commitment)",
@@ -87,21 +87,22 @@ global_pre_payout_recovery_pct = st.sidebar.number_input(
 )
 global_target_profit_margin_pct = st.sidebar.number_input(
     "Target Profit Margin % (on Total Commitment)",
-    min_value=0.0, max_value=50.0, value=1.0, step=0.5, # Using your file's value
+    min_value=0.0, max_value=50.0, value=1.0, step=0.5,
     help="Desired profit margin from each user's total commitment, used for Fee Suggestion Calculator IF enabled below."
 )
 use_target_profit_margin_for_fee_sugg = st.sidebar.checkbox(
     "Enable Target Profit Margin for Fee Suggestion",
     value=True,
-    key="enable_target_profit_fee_sugg_final_complete", # Using your file's key
+    key="enable_target_profit_fee_sugg_fixed", # Using consistent key
     help="If checked, fee suggestion aims for Target Profit Margin. If unchecked, aims to cover NII & losses (breakeven)."
 )
 default_post_pct = 100 - default_pre_pct
 
 
 # === DURATION/SLAB/SLOT CONFIGURATION ===
+# (Using the simplified defaults from your last file for quick testing of 100-100-100 scenario)
 validation_messages = []
-durations_input = st.multiselect("Select Durations (months)", [3, 4, 5, 6, 8, 10], default=[3]) # Using your file's default
+durations_input = st.multiselect("Select Durations (months)", [3, 4, 5, 6, 8, 10], default=[3])
 durations = [int(d) for d in durations_input]
 yearly_duration_share = {}
 slab_map = {}
@@ -119,7 +120,7 @@ for y_config in range(1, 6):
             key_config = f"yds_{y_config}_{d_config}"
             default_val_to_use = 0
             if y_config == 1: default_val_to_use = 100 if durations and d_config == durations[0] else 0
-            else: default_val_to_use = first_year_defaults.get(d_config, 0) # Use Y1 value for Y2-Y5
+            else: default_val_to_use = first_year_defaults.get(d_config, 0)
             val_config = st.number_input(f"{d_config}M–Year {y_config}(%)", 0, 100, default_val_to_use, 1, key=key_config)
             yearly_duration_share[y_config][d_config] = val_config
             if y_config == 1: first_year_defaults[d_config] = val_config
@@ -136,8 +137,8 @@ for d_config in durations:
         slab_options = [1000, 2000, 5000, 10000, 15000, 20000, 25000, 50000]
         for i_slab, slab_amount_config in enumerate(slab_options):
             key_config = f"slab_{d_config}_{slab_amount_config}"
-            current_default = 100 if i_slab == 0 else 0 # Default first slab to 100%
-            val_config = st.number_input(f"Slab {slab_amount_config}–{d_config}M(%)",0,100,current_default,1,key=key_config)
+            current_default = 100 if i_slab == 0 else 0
+            val_config = st.number_input(f"Slab {slab_amount_config}–{d_config}M(%)", 0,100,current_default,1,key=key_config)
             slab_map[d_config][slab_amount_config] = val_config
             total_slab_pct_config += val_config
         if abs(total_slab_pct_config - 100.0) > 1e-7 and total_slab_pct_config != 0:
@@ -170,9 +171,9 @@ for d_config in durations:
             suggested_fee_pct_val = max(0, suggested_fee_pct_val)
             help_text_sugg = (f"Sugg: {suggested_fee_pct_val:.1f}%. TargetProfit={target_profit_margin_display_for_help:.1f}% (On: {use_target_profit_margin_for_fee_sugg}).")
             key_fee_config = f"fee_{d_config}_{s_config}"; key_block_config = f"block_{d_config}_{s_config}"; key_pct_config = f"slot_pct_d{d_config}_s{s_config}"
-            current_slot_default_pct = 100 if s_config == 1 else 0 # Default Slot 1 to 100%
+            current_slot_default_pct = 100 if s_config == 1 else 0
             fee_input_val = st.number_input(f"S{s_config} Fee%", 0.0,100.0,1.0,key=key_fee_config,help=help_text_sugg,format="%.2f")
-            blocked_input_val = st.checkbox(f"Block S{s_config}",key=key_block_config,value=(s_config != 1)) # Block others
+            blocked_input_val = st.checkbox(f"Block S{s_config}",key=key_block_config,value=(s_config != 1))
             slot_pct_input_val = st.number_input(f"S{s_config} %Users",0,100,current_slot_default_pct,1,key=key_pct_config)
             slot_fees[d_config][s_config] = {"fee": fee_input_val, "blocked": blocked_input_val}
             slot_distribution[d_config][s_config] = slot_pct_input_val
@@ -191,7 +192,7 @@ def apportion_users(total_users_to_apportion, shares_dict):
     positive_shares_dict = {item: share for item, share in shares_dict.items() if share > 0}
     if not positive_shares_dict: return {item: 0 for item in shares_dict}
     sum_positive_shares = sum(positive_shares_dict.values())
-    if sum_positive_shares == 0 : return {item: 0 for item in shares_dict} # Should be caught by "not positive_shares_dict"
+    if sum_positive_shares == 0 : return {item: 0 for item in shares_dict}
     normalized_shares = {item: (share / sum_positive_shares) for item, share in positive_shares_dict.items()}
     exact_allocations = {item: norm_share * total_users_to_apportion for item, norm_share in normalized_shares.items()}
     quotas = {item: int(alloc) for item, alloc in exact_allocations.items()}
@@ -199,8 +200,7 @@ def apportion_users(total_users_to_apportion, shares_dict):
     current_total_allocated = sum(quotas.values())
     remaining_to_allocate = total_users_to_apportion - current_total_allocated # This can be float
     sorted_by_remainder = sorted(remainders.items(), key=lambda x: x[1], reverse=True)
-    # Iterate int(round(remaining_to_allocate)) times to handle potential float inaccuracies
-    for i in range(int(round(remaining_to_allocate))):
+    for i in range(int(round(remaining_to_allocate))): # Ensure whole number for range
         if i < len(sorted_by_remainder):
             item_to_get_extra = sorted_by_remainder[i][0]
             quotas[item_to_get_extra] += 1
@@ -213,17 +213,15 @@ def apportion_users(total_users_to_apportion, shares_dict):
 def run_forecast(config_param_fc):
     months_fc = 60
     initial_tam_fc = int(config_param_fc['total_market'] * config_param_fc['tam_pct'] / 100)
-    # Month 1 new users:
-    new_users_monthly_fc = [int(initial_tam_fc * (config_param_fc['start_pct'] / 100))]
-
+    new_users_monthly_fc = [int(initial_tam_fc * (config_param_fc['start_pct'] / 100))] # Correctly initializes Month 1 new users
     rejoin_tracker_fc = {}
     forecast_data_fc, deposit_log_data_fc, default_log_data_fc, lifecycle_data_fc = [], [], [], []
-
+    
     is_cap_enforced_in_config = config_param_fc.get("cap_tam", False)
-    TAM_used_cumulative_fc = 0
+    TAM_used_cumulative_fc = 0 
     if is_cap_enforced_in_config:
-        TAM_used_cumulative_fc = new_users_monthly_fc[0]
-    TAM_current_year_fc = initial_tam_fc
+        TAM_used_cumulative_fc = new_users_monthly_fc[0] 
+    TAM_current_year_fc = initial_tam_fc 
 
     current_kibor_rate_fc = config_param_fc['kibor'] / 100
     current_spread_rate_fc = config_param_fc['spread'] / 100
@@ -231,16 +229,15 @@ def run_forecast(config_param_fc):
     current_rest_period_months_fc = config_param_fc['rest_period']
     current_default_frac_fc = config_param_fc['default_rate'] / 100
     current_pre_payout_recovery_frac_fc = config_param_fc['global_pre_payout_recovery_pct'] / 100
-    # global_default_pre_frac_fc and global_default_post_frac_fc are derived from sidebar inputs directly
-    # These are global python variables available within this function scope.
-    # default_pre_pct and default_post_pct from global scope are used.
+    # default_pre_pct and default_post_pct (as fractions) are accessed from global scope within this function
+    # No need to redefine them as global_default_pre_frac_fc, etc. inside unless shadowing is an issue.
 
-    DEBUG_MODE = True # Ensure this is True for debugging
+    DEBUG_MODE = True 
 
     for m_idx_fc in range(months_fc):
         current_month_num_fc = m_idx_fc + 1
         current_year_num_fc = m_idx_fc // 12 + 1
-
+        
         current_month_new_users_fc = new_users_monthly_fc[m_idx_fc] if m_idx_fc < len(new_users_monthly_fc) else 0
         rejoining_users_this_month_fc = rejoin_tracker_fc.get(m_idx_fc, 0)
         total_onboarding_this_month_fc = current_month_new_users_fc + rejoining_users_this_month_fc
@@ -253,6 +250,7 @@ def run_forecast(config_param_fc):
 
         durations_for_this_year_fc_shares = yearly_duration_share.get(current_year_num_fc, {})
         active_duration_shares = {d: s for d, s in durations_for_this_year_fc_shares.items() if s > 0 and d in durations}
+
 
         if total_onboarding_this_month_fc > 0 and active_duration_shares:
             apportioned_users_by_duration = apportion_users(total_onboarding_this_month_fc, active_duration_shares)
@@ -278,7 +276,7 @@ def run_forecast(config_param_fc):
                         total_commitment_per_user_fc = installment_val_fc * dur_val_fc
                         fee_amount_per_user_fc = total_commitment_per_user_fc * fee_on_commitment_frac_fc
                         from_rejoin_pool_fc = 0
-                        from_newly_acquired_fc = users_in_this_specific_cohort_fc # Simplified
+                        from_newly_acquired_fc = users_in_this_specific_cohort_fc
                         total_nii_for_cohort_lifetime_per_user = 0
                         payout_due_month_idx_for_cohort_fc = m_idx_fc + slot_num_fc - 1
                         for j_installment_num in range(dur_val_fc):
@@ -292,7 +290,7 @@ def run_forecast(config_param_fc):
                         avg_monthly_nii_for_cohort = total_nii_for_cohort_duration_fc / dur_val_fc if dur_val_fc > 0 else 0
                         nii_to_log_for_joining_month = avg_monthly_nii_for_cohort
                         num_defaulters_total_fc = int(round(users_in_this_specific_cohort_fc * current_default_frac_fc))
-                        num_pre_payout_defaulters_fc = int(round(num_defaulters_total_fc * (default_pre_pct / 100))) # Use global directly
+                        num_pre_payout_defaulters_fc = int(round(num_defaulters_total_fc * (default_pre_pct / 100)))
                         num_post_payout_defaulters_fc = num_defaulters_total_fc - num_pre_payout_defaulters_fc
                         loss_per_pre_defaulter_fc = total_commitment_per_user_fc * (1 - current_pre_payout_recovery_frac_fc)
                         total_pre_payout_loss_fc = num_pre_payout_defaulters_fc * loss_per_pre_defaulter_fc
@@ -330,6 +328,7 @@ def run_forecast(config_param_fc):
         
         # --- Calculate NEW USERS for the NEXT month ---
         if m_idx_fc + 1 < months_fc:
+            # CORRECTED GROWTH LOGIC: Growth is applied to the current month's NEW USER count
             new_users_base_for_growth = new_users_monthly_fc[m_idx_fc] # New users from THIS month (m_idx_fc)
             
             monthly_growth_rate_frac = config_param_fc['monthly_growth'] / 100
@@ -338,7 +337,7 @@ def run_forecast(config_param_fc):
             next_month_new_users_value = new_users_base_for_growth * (1 + monthly_growth_rate_frac) # Compounding
             next_month_new_users_calculated = int(round(next_month_new_users_value))
 
-            if DEBUG_MODE and m_idx_fc < 23:
+            if DEBUG_MODE and m_idx_fc < 23: # Debug prints for the next month's calculation
                 st.write(f"  Calculating New Users for Next Month (M{current_month_num_fc+1}):")
                 st.write(f"    Base for Growth (New Users M{current_month_num_fc}): {new_users_base_for_growth}")
                 st.write(f"    Monthly Growth Rate Config: {monthly_growth_rate_frac*100:.2f}%")
@@ -346,21 +345,23 @@ def run_forecast(config_param_fc):
                 st.write(f"    New Users Calculated (rounded int) for M{current_month_num_fc+1}: {next_month_new_users_calculated}")
             
             if is_cap_enforced_in_config:
-                if (m_idx_fc + 1) % 12 == 0: # If NEXT month is the start of a new year
+                # Apply TAM Cap Logic
+                # Reset TAM_used_cumulative_fc at the beginning of a new TAM year
+                if (m_idx_fc + 1) % 12 == 0: # If the *next* month (m_idx_fc + 1) is a new year boundary (12, 24, 36...)
                     TAM_current_year_fc = int(TAM_current_year_fc * (1 + config_param_fc['annual_growth'] / 100))
-                    TAM_used_cumulative_fc = 0 # Reset TAM used for the NEWLY starting year
-                
+                    TAM_used_cumulative_fc = 0 # Reset for the new TAM year just starting
+
                 if (TAM_used_cumulative_fc + next_month_new_users_calculated) > TAM_current_year_fc :
                     next_month_new_users_final = max(0, TAM_current_year_fc - TAM_used_cumulative_fc)
                 else:
                     next_month_new_users_final = next_month_new_users_calculated
                 TAM_used_cumulative_fc += next_month_new_users_final 
             else: 
-                next_month_new_users_final = next_month_new_users_calculated
+                next_month_new_users_final = next_month_new_users_calculated # No cap, use the compounded value
             
             new_users_monthly_fc.append(next_month_new_users_final)
             
-            if DEBUG_MODE and m_idx_fc < 23:
+            if DEBUG_MODE and m_idx_fc < 23: # Debug print for the final appended value for the next month
                  st.write(f"    New Users Appended for M{current_month_num_fc+1}: {next_month_new_users_final}")
                  if is_cap_enforced_in_config:
                      st.write(f"    TAM Used Cumulative: {TAM_used_cumulative_fc}, Current Year TAM: {TAM_current_year_fc}")
@@ -372,22 +373,29 @@ def run_forecast(config_param_fc):
     return df_forecast_fc, df_deposit_log_fc, df_default_log_fc, df_lifecycle_fc
 
 # === EXPORT AND DISPLAY ===
+# (This section remains unchanged from your input_file_0.py)
 output_excel_main = io.BytesIO()
 with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main:
-    if "debug_placeholder" not in st.session_state:
+    if "debug_placeholder" not in st.session_state: # To control debug print area if needed
         st.session_state.debug_placeholder = st.empty()
 
     for scenario_idx_main, scenario_data_main in enumerate(scenarios):
-        if scenario_idx_main > 0: # Try to clear placeholder for subsequent scenarios
+        if scenario_idx_main > 0 : # Try to clear placeholder for subsequent scenarios if st.write was used in placeholder
             st.session_state.debug_placeholder.empty()
         
         current_config_main = scenario_data_main.copy()
         current_config_main.update({
             "kibor": kibor, "spread": spread, "rest_period": rest_period,
-            "default_rate": default_rate,
+            "default_rate": default_rate, # global default_rate
             "global_pre_payout_recovery_pct": global_pre_payout_recovery_pct
+            # "cap_tam" is already in scenario_data_main from the UI config
         })
         
+        # For grouped debug prints per scenario, wrap run_forecast in a container:
+        # with st.expander("Debug Log for " + scenario_data_main['name']):
+        # df_forecast_main, ... = run_forecast(current_config_main)
+        # Or just let the st.write in run_forecast print as is.
+
         df_forecast_main, df_deposit_log_main, df_default_log_main, df_lifecycle_main = run_forecast(current_config_main)
         
         st.header(f"Scenario: {scenario_data_main['name']}")
@@ -396,7 +404,7 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             # Apply formatting for display
             format_dict = {col: "{:,.0f}" for col in df_forecast_main.columns if df_forecast_main[col].dtype in ['int64', 'float64'] and col not in ['Month Joined', 'Year Joined', 'Duration', 'Assigned Slot']}
             if 'Pools Formed' in df_forecast_main.columns: format_dict["Pools Formed"] = "{:,.2f}" 
-            if 'Fee % (on Total Commitment)' in df_forecast_main.columns: format_dict["Fee % (on Total Commitment)"] = "{:,.2f}" # Raw percentage
+            if 'Fee % (on Total Commitment)' in df_forecast_main.columns: format_dict["Fee % (on Total Commitment)"] = "{:,.2f}"
             
             existing_format_dict = {k: v for k, v in format_dict.items() if k in df_forecast_main.columns}
             
@@ -486,13 +494,11 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
                 "Part-B Profit Share": df_yearly_summary_main["Annual Gross Profit (Accrued from New Cohorts)"] * party_b_pct
             })
             df_profit_share_main["% Loss Covered by External Capital"] = 0
-            # Check if the denominator column exists and has any positive values before division
             if not df_yearly_summary_main.empty and \
                "Annual Total Default Loss (Lifetime from New Cohorts)" in df_yearly_summary_main.columns and \
                df_yearly_summary_main["Annual Total Default Loss (Lifetime from New Cohorts)"].gt(0).any():
                 
                 mask_main = df_yearly_summary_main["Annual Total Default Loss (Lifetime from New Cohorts)"] > 0
-                # Ensure the numerator also exists before trying to divide
                 if "Annual External Capital For Loss (Lifetime from New Cohorts)" in df_yearly_summary_main.columns:
                     df_profit_share_main.loc[mask_main, "% Loss Covered by External Capital"] = \
                         (df_yearly_summary_main.loc[mask_main, "Annual External Capital For Loss (Lifetime from New Cohorts)"] / \
