@@ -36,28 +36,18 @@ plt.rcParams.update({
 
 # Helper function to calculate days between two dates specified by month index and day of month
 def days_between_specific_dates(start_month_idx, start_day_of_month, end_month_idx, end_day_of_month, base_year=2024):
-    """
-    Calculates days between two dates defined by 0-indexed month and day of month.
-    Assumes a base year for date calculations.
-    """
     if start_month_idx > end_month_idx or (start_month_idx == end_month_idx and start_day_of_month >= end_day_of_month):
         return 0
-
-    # Convert 0-indexed month to 1-indexed month for datetime
     start_actual_month = (start_month_idx % 12) + 1
     start_actual_year = base_year + (start_month_idx // 12)
-    
     end_actual_month = (end_month_idx % 12) + 1
     end_actual_year = base_year + (end_month_idx // 12)
-
     try:
         date_start = date(start_actual_year, start_actual_month, start_day_of_month)
         date_end = date(end_actual_year, end_actual_month, end_day_of_month)
-        return (date_end - date_start).days
-    except ValueError: # Handle invalid dates like Feb 30
-        # This is a simple fallback, real scenario might need more robust day clamping
+        return max(0, (date_end - date_start).days) # Ensure non-negative
+    except ValueError:
         return max(0, (end_month_idx - start_month_idx) * 30 + (end_day_of_month - start_day_of_month))
-
 
 # === SCENARIO & UI SETUP ===
 st.title("📊 BACHAT-KOMMITTEE Business Case/Pricing")
@@ -68,7 +58,6 @@ scenario_count = st.sidebar.number_input("Number of Scenarios", min_value=1, max
 for i in range(scenario_count):
     with st.sidebar.expander(f"Scenario {i+1} Settings"):
         name = st.text_input(f"Scenario Name {i+1}", value=f"Scenario {i+1}", key=f"name_{i}")
-        # ... (rest of scenario inputs remain the same) ...
         total_market = st.number_input("Total Market Size", value=20000000, key=f"market_{i}")
         tam_pct = st.number_input("TAM % of Market", min_value=1, max_value=100, value=10, key=f"tam_pct_{i}")
         start_pct = st.number_input("Starting TAM % (Month 1)", min_value=1, max_value=100, value=10, key=f"start_pct_{i}")
@@ -84,7 +73,6 @@ for i in range(scenario_count):
 # === GLOBAL INPUTS ===
 global_collection_day = st.sidebar.number_input("Collection Day of Month", min_value=1, max_value=28, value=1)
 global_payout_day = st.sidebar.number_input("Payout Day of Month", min_value=1, max_value=28, value=20)
-# ... (rest of global inputs remain the same) ...
 profit_split = st.sidebar.number_input("Profit Share for Party A (%)", min_value=0, max_value=100, value=50)
 party_a_pct = profit_split / 100
 party_b_pct = 1 - party_a_pct
@@ -92,13 +80,16 @@ kibor = st.sidebar.number_input("KIBOR (%)", value=11.0)
 spread = st.sidebar.number_input("Spread (%)", value=5.0)
 rest_period = st.sidebar.number_input("Rest Period (months)", value=1)
 default_rate = st.sidebar.number_input("Default Rate (%)", value=1.0)
-default_pre_pct = st.sidebar.number_input("Pre-Payout Default %", min_value=0, max_value=100, value=50)
+default_pre_pct = st.sidebar.number_input("Pre-Payout Default % (of total defaulters)", min_value=0, max_value=100, value=50)
 default_post_pct = 100 - default_pre_pct
-penalty_pct = st.sidebar.number_input("Pre-Payout Refund (%)", value=10.0)
-
+# RENAMED and CLARIFIED this input for new default logic:
+global_penalty_forfeit_pct = st.sidebar.number_input(
+    "Forfeited % of Paid-in by Pre-Payout Defaulter", 
+    min_value=0.0, max_value=100.0, value=90.0, step=1.0,
+    help="Percentage of the amount ALREADY PAID IN by a pre-payout defaulter that is forfeited by them (kept by the platform)."
+)
 
 # === DURATION/SLAB/SLOT CONFIGURATION ===
-# ... (This section remains the same as your last full code version) ...
 validation_messages = []
 durations_input = st.multiselect("Select Durations (months)", [3, 4, 5, 6, 8, 10], default=[3, 4, 6])
 durations = [int(d) for d in durations_input] 
@@ -141,17 +132,19 @@ for d_config in durations:
         for s_config in range(1, d_config + 1):
             example_slab_sugg = 1000
             total_commit_sugg = d_config * example_slab_sugg
-            avg_nii_sugg = total_commit_sugg * ((kibor + spread) / 100 / 12) * sum(range(1, d_config + 1)) / d_config
-            pre_def_loss_sugg = total_commit_sugg * (default_rate/100) * (default_pre_pct / 100) * (1 - penalty_pct / 100)
+            avg_nii_sugg_for_fee = total_commit_sugg * ((kibor + spread) / 100 / 12) * sum(range(1, d_config + 1)) / d_config # Simplified NII for fee suggestion
+            # For fee suggestion, use original simpler default loss logic concept if desired
+            pre_def_loss_sugg = total_commit_sugg * (default_rate/100) * (default_pre_pct / 100) # Assuming this is the amount at risk
             post_def_loss_sugg = total_commit_sugg * (default_rate/100) * (default_post_pct / 100)
-            avg_loss_sugg = (pre_def_loss_sugg + post_def_loss_sugg)
+            avg_loss_sugg = pre_def_loss_sugg + post_def_loss_sugg # Simplified default impact for fee suggestion
+            
             suggested_fee_pct_val = 0
             if total_commit_sugg > 0:
-                 suggested_fee_pct_val = ((avg_nii_sugg + avg_loss_sugg) / total_commit_sugg) * 100
+                 suggested_fee_pct_val = ((avg_nii_sugg_for_fee + avg_loss_sugg) / total_commit_sugg) * 100
             key_fee_config = f"fee_{d_config}_{s_config}"
             key_block_config = f"block_{d_config}_{s_config}"
             key_pct_config = f"slot_pct_d{d_config}_s{s_config}"
-            fee_input_val = st.number_input(f"Slot {s_config} Fee % (on total commitment)", 0.0, 100.0, 1.0, key=key_fee_config, help=f"Suggested ≥ {suggested_fee_pct_val:.2f}%")
+            fee_input_val = st.number_input(f"Slot {s_config} Fee % (on total commitment)", 0.0, 100.0, 1.0, key=key_fee_config, help=f"Suggested based on 1k slab, simple NII/loss ≥ {max(0,suggested_fee_pct_val):.2f}%")
             blocked_input_val = st.checkbox(f"Block Slot {s_config}", key=key_block_config)
             slot_pct_input_val = st.number_input(
                 label=f"Slot {s_config} % of Users (Duration {d_config}M)", min_value=0, max_value=100, value=0, step=1, key=key_pct_config)
@@ -164,7 +157,6 @@ for d_config in durations:
 if validation_messages:
     for msg_val in validation_messages: st.warning(msg_val)
     st.stop()
-
 
 # === FORECASTING LOGIC ===
 def run_forecast(config_param_fc):
@@ -184,9 +176,11 @@ def run_forecast(config_param_fc):
     daily_interest_rate_fc = (current_kibor_rate_fc + current_spread_rate_fc) / 365
     current_rest_period_months_fc = config_param_fc['rest_period']
     current_default_frac_fc = config_param_fc['default_rate'] / 100
-    current_penalty_frac_fc = config_param_fc['penalty_pct'] / 100
-    global_default_pre_frac_fc = default_pre_pct / 100
-    global_default_post_frac_fc = default_post_pct / 100
+    # Using the new penalty input:
+    current_penalty_forfeit_frac_fc = config_param_fc['penalty_forfeit_pct'] / 100
+    
+    global_default_pre_frac_fc = default_pre_pct / 100 # This comes from global scope, not config_param_fc
+    # global_default_post_frac_fc is 1 - global_default_pre_frac_fc
 
     for m_idx_fc in range(months_fc): # 0-indexed month of simulation
         current_month_num_fc = m_idx_fc + 1 # 1-indexed calendar month
@@ -223,58 +217,55 @@ def run_forecast(config_param_fc):
                     from_newly_acquired_fc = users_in_this_specific_cohort_fc - from_rejoin_pool_fc
                     rejoining_users_this_month_fc -= from_rejoin_pool_fc
 
-                    # --- Granular NII Calculation for Lifetime of this Cohort ---
+                    # --- Granular NII Calculation ---
                     total_nii_for_cohort_lifetime_per_user = 0
-                    # Payout for this cohort happens at the END of `payout_due_month_idx_fc` on `global_payout_day`
-                    # `slot_num_fc` is 1-indexed payout sequence.
-                    # If cohort joins in `m_idx_fc`, payout is in month `m_idx_fc + slot_num_fc - 1` (0-indexed)
                     payout_due_month_idx_for_cohort_fc = m_idx_fc + slot_num_fc - 1
-
-                    for j_installment_num in range(dur_val_fc): # 0 to dur_val_fc-1 (representing installment 1 to N)
-                        # Month index (0-indexed) when this j-th installment is collected
+                    for j_installment_num in range(dur_val_fc):
                         collection_month_of_this_installment_idx = m_idx_fc + j_installment_num
-                        
-                        # Calculate days this specific installment is held until the cohort's payout
                         days_this_installment_held = days_between_specific_dates(
                             collection_month_of_this_installment_idx, global_collection_day,
                             payout_due_month_idx_for_cohort_fc, global_payout_day
                         )
-                        
                         nii_from_this_installment = installment_val_fc * daily_interest_rate_fc * days_this_installment_held
                         total_nii_for_cohort_lifetime_per_user += nii_from_this_installment
-                    
                     total_nii_for_cohort_duration_fc = total_nii_for_cohort_lifetime_per_user * users_in_this_specific_cohort_fc
-                    
-                    # For "NII Earned This Month" (when cohort joins), use an average for simplicity in forecast table.
-                    # This is the NII earned on the first installment, using its specific holding period.
-                    nii_on_first_installment_this_cohort = 0
-                    if dur_val_fc > 0:
-                        days_first_installment_held = days_between_specific_dates(
-                            m_idx_fc, global_collection_day,
-                            payout_due_month_idx_for_cohort_fc, global_payout_day
-                        )
-                        nii_on_first_installment_this_cohort = (installment_val_fc * daily_interest_rate_fc * days_first_installment_held) * users_in_this_specific_cohort_fc
-                    
-                    # If you prefer to show average monthly NII in the forecast joining row:
                     avg_monthly_nii_for_cohort = total_nii_for_cohort_duration_fc / dur_val_fc if dur_val_fc > 0 else 0
-                    nii_to_log_for_joining_month = avg_monthly_nii_for_cohort # Using average for the "NII Earned This Month" column
-
+                    nii_to_log_for_joining_month = avg_monthly_nii_for_cohort
                     # --- End Granular NII Calculation ---
 
+                    # --- Refined Default Logic ---
                     num_defaulters_total_fc = int(users_in_this_specific_cohort_fc * current_default_frac_fc)
                     num_pre_payout_defaulters_fc = int(num_defaulters_total_fc * global_default_pre_frac_fc)
                     num_post_payout_defaulters_fc = num_defaulters_total_fc - num_pre_payout_defaulters_fc
-                    loss_per_pre_defaulter_fc = total_commitment_per_user_fc * (1 - current_penalty_frac_fc)
+
+                    # Pre-Payout Defaulter Loss
+                    loss_per_pre_defaulter_fc = 0 # Default to 0 loss if not applicable
+                    if num_pre_payout_defaulters_fc > 0:
+                        num_installments_paid_by_pre_defaulter_estimate = 0
+                        if slot_num_fc > 1:
+                            installments_before_slot = slot_num_fc - 1
+                            num_installments_paid_by_pre_defaulter_estimate = max(1, math.ceil(installments_before_slot * 0.5))
+                        
+                        amount_paid_in_value = num_installments_paid_by_pre_defaulter_estimate * installment_val_fc
+                        amount_forfeited_value = amount_paid_in_value * current_penalty_forfeit_frac_fc
+                        
+                        # Loss: Value of the slot platform might need to cover, less what's recovered via forfeiture
+                        loss_per_pre_defaulter_fc = total_commitment_per_user_fc - amount_forfeited_value
+                        loss_per_pre_defaulter_fc = max(0, loss_per_pre_defaulter_fc) # Loss cannot be negative
+
                     total_pre_payout_loss_fc = num_pre_payout_defaulters_fc * loss_per_pre_defaulter_fc
-                    loss_per_post_defaulter_fc = total_commitment_per_user_fc
+
+                    # Post-Payout Defaulter Loss
+                    loss_per_post_defaulter_fc = total_commitment_per_user_fc 
                     total_post_payout_loss_fc = num_post_payout_defaulters_fc * loss_per_post_defaulter_fc
+                    
                     total_loss_for_cohort_fc = total_pre_payout_loss_fc + total_post_payout_loss_fc
+                    # --- End Refined Default Logic ---
                     
                     total_fees_for_cohort_fc = fee_amount_per_user_fc * users_in_this_specific_cohort_fc
                     expected_lifetime_profit_for_cohort_fc = (total_fees_for_cohort_fc + total_nii_for_cohort_duration_fc) - total_loss_for_cohort_fc
                     cash_in_installments_this_month_cohort_fc = users_in_this_specific_cohort_fc * installment_val_fc
                     
-                    # Payout due month (1-indexed for storage and summary)
                     payout_due_calendar_month_for_cohort_fc = payout_due_month_idx_for_cohort_fc + 1 
                     payout_amount_scheduled_for_cohort_fc = users_in_this_specific_cohort_fc * total_commitment_per_user_fc
                     pools_formed_by_this_cohort_fc = users_in_this_specific_cohort_fc / dur_val_fc if dur_val_fc > 0 else 0
@@ -287,8 +278,8 @@ def run_forecast(config_param_fc):
                         "Total Commitment/User": total_commitment_per_user_fc,
                         "Fee % (on Total Commitment)": fee_on_commitment_frac_fc * 100,
                         "Total Fee Collected (Lifetime)": total_fees_for_cohort_fc,
-                        "NII Earned This Month (Avg)": nii_to_log_for_joining_month, # Average monthly NII for this cohort
-                        "Total NII (Lifetime)": total_nii_for_cohort_duration_fc, # Accurate sum of granular NII
+                        "NII Earned This Month (Avg)": nii_to_log_for_joining_month,
+                        "Total NII (Lifetime)": total_nii_for_cohort_duration_fc,
                         "Expected Lifetime Profit": expected_lifetime_profit_for_cohort_fc,
                         "Cash In (Installments This Month)": cash_in_installments_this_month_cohort_fc,
                         "Payout Due Month": payout_due_calendar_month_for_cohort_fc,
@@ -299,11 +290,11 @@ def run_forecast(config_param_fc):
 
                     deposit_log_data_fc.append({"Month": current_month_num_fc, "Users Joining": users_in_this_specific_cohort_fc, 
                                               "Installments Collected": cash_in_installments_this_month_cohort_fc, 
-                                              "NII This Month (Avg)": nii_to_log_for_joining_month}) # Log average here too
+                                              "NII This Month (Avg)": nii_to_log_for_joining_month})
                     default_log_data_fc.append({"Month": current_month_num_fc, "Year": current_year_num_fc, 
-                                              "Pre-Payout Defaulters (Cohort)": num_pre_payout_defaulters_fc,
-                                              "Post-Payout Defaulters (Cohort)": num_post_payout_defaulters_fc,
-                                              "Default Loss (Cohort Lifetime)": total_loss_for_cohort_fc})
+                                              "Pre-Payout Defaulters (Cohort)": num_pre_payout_defaulters_fc, # Number of users
+                                              "Post-Payout Defaulters (Cohort)": num_post_payout_defaulters_fc, # Number of users
+                                              "Default Loss (Cohort Lifetime)": total_loss_for_cohort_fc}) # Total monetary loss
                     lifecycle_data_fc.append({"Month": current_month_num_fc, 
                                             "New Users Acquired for Cohort": from_newly_acquired_fc, 
                                             "Rejoining Users for Cohort": from_rejoin_pool_fc,
@@ -313,7 +304,7 @@ def run_forecast(config_param_fc):
                     if rejoin_at_month_idx_fc < months_fc:
                         rejoin_tracker_fc[rejoin_at_month_idx_fc] = rejoin_tracker_fc.get(rejoin_at_month_idx_fc, 0) + users_in_this_specific_cohort_fc
         
-        if m_idx_fc + 1 < months_fc: # Logic for next month's new users
+        if m_idx_fc + 1 < months_fc:
             growth_base_for_next_month_fc = total_onboarding_this_month_fc
             next_month_new_users_fc = int(growth_base_for_next_month_fc * (config_param_fc['monthly_growth'] / 100))
             if enforce_cap_growth_fc and (TAM_used_cumulative_fc + next_month_new_users_fc) > TAM_current_year_fc:
@@ -330,11 +321,6 @@ def run_forecast(config_param_fc):
     return df_forecast_fc, df_deposit_log_fc, df_default_log_fc, df_lifecycle_fc
 
 # === EXPORT AND DISPLAY ===
-# ... (This section remains the same as your last full code version, BUT it will now use the new NII column names)
-# Key changes will be to rename "NII Earned This Month" to "NII Earned This Month (Avg)" in summaries and charts if needed.
-# Or, if the monthly summary is to reflect true accrued NII, that's a separate complex calculation.
-# For now, let's assume the summaries will sum up the "NII Earned This Month (Avg)" from df_forecast.
-
 output_excel_main = io.BytesIO()
 
 with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main:
@@ -342,7 +328,8 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
         current_config_main = scenario_data_main.copy()
         current_config_main.update({
             "kibor": kibor, "spread": spread, "rest_period": rest_period,
-            "default_rate": default_rate, "penalty_pct": penalty_pct
+            "default_rate": default_rate, 
+            "penalty_forfeit_pct": global_penalty_forfeit_pct # Pass the new penalty parameter
         })
         
         df_forecast_main, df_deposit_log_main, df_default_log_main, df_lifecycle_main = run_forecast(current_config_main)
@@ -352,12 +339,11 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
         if not df_forecast_main.empty:
             st.dataframe(df_forecast_main.style.format(precision=0, thousands=","))
 
-            # --- Derive Monthly Summary ---
             df_monthly_direct_main = df_forecast_main.groupby("Month Joined")[
-                ["Cash In (Installments This Month)", "NII Earned This Month (Avg)", "Pools Formed", "Users"] # CHANGED NII column
+                ["Cash In (Installments This Month)", "NII Earned This Month (Avg)", "Pools Formed", "Users"]
             ].sum().reset_index().rename(columns={"Month Joined": "Month", 
                                                   "Users": "Users Joining This Month",
-                                                  "NII Earned This Month (Avg)": "NII This Month (Sum of Avg from New Cohorts)"}) # CLARIFIED
+                                                  "NII Earned This Month (Avg)": "NII This Month (Sum of Avg from New Cohorts)"})
 
             df_payouts_actual_main = df_forecast_main.groupby("Payout Due Month")[
                 ["Payout Amount Scheduled", "Users"]
@@ -368,7 +354,7 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             })
             
             df_lifetime_values_main = df_forecast_main.groupby("Month Joined")[
-                ["Total Fee Collected (Lifetime)", "Total NII (Lifetime)",  # This is the accurate granular sum
+                ["Total Fee Collected (Lifetime)", "Total NII (Lifetime)", 
                  "Total Default Loss (Lifetime)", "Expected Lifetime Profit",
                  "External Capital For Loss (Lifetime)"]
             ].sum().reset_index().rename(columns={"Month Joined": "Month"})
@@ -380,7 +366,6 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             df_monthly_summary_main = df_monthly_summary_main.fillna(0)
 
             df_monthly_summary_main["Net Cash Flow This Month"] = df_monthly_summary_main["Cash In (Installments This Month)"] - df_monthly_summary_main["Actual Cash Out This Month"]
-            # Gross Profit based on lifetime values of cohorts starting this month
             df_monthly_summary_main["Gross Profit This Month (Accrued from New Cohorts)"] = df_monthly_summary_main["Total Fee Collected (Lifetime)"] + \
                                                                     df_monthly_summary_main["Total NII (Lifetime)"] - \
                                                                     df_monthly_summary_main["Total Default Loss (Lifetime)"]
@@ -389,15 +374,14 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             cols_to_display_monthly_main = [
                 "Month", "Users Joining This Month", "Pools Formed", 
                 "Cash In (Installments This Month)", "Actual Cash Out This Month", "Net Cash Flow This Month",
-                "NII This Month (Sum of Avg from New Cohorts)", # Displaying the sum of averages
-                "Total NII (Lifetime)", # Displaying sum of accurate lifetime NII from new cohorts
+                "NII This Month (Sum of Avg from New Cohorts)", 
+                "Total NII (Lifetime)", 
                 "Payout Recipient Users",
                 "Total Fee Collected (Lifetime)", "Total Default Loss (Lifetime)",
                 "Gross Profit This Month (Accrued from New Cohorts)", "External Capital For Loss (Lifetime)"
             ]
             st.dataframe(df_monthly_summary_main[cols_to_display_monthly_main].style.format(precision=0, thousands=","))
 
-            # --- Derive Yearly Summary ---
             df_monthly_summary_main["Year"] = ((df_monthly_summary_main["Month"] - 1) // 12) + 1
             df_yearly_summary_main = df_monthly_summary_main.groupby("Year")[
                 ["Users Joining This Month", "Pools Formed", "Cash In (Installments This Month)", 
@@ -413,12 +397,11 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
                 "Total NII (Lifetime)": "Annual Total NII (Lifetime from New Cohorts)"
                 }, inplace=True)
 
-            # --- Profit Share Summary ---
             df_profit_share_main = pd.DataFrame({
                 "Year": df_yearly_summary_main["Year"],
                 "External Capital Needed (Annual Accrual)": df_yearly_summary_main["External Capital For Loss (Lifetime)"],
                 "Annual Cash In (Installments)": df_yearly_summary_main["Cash In (Installments This Month)"],
-                "Annual NII (Accrued Lifetime)": df_yearly_summary_main["Annual Total NII (Lifetime from New Cohorts)"], # Using the accurate sum
+                "Annual NII (Accrued Lifetime)": df_yearly_summary_main["Annual Total NII (Lifetime from New Cohorts)"],
                 "Annual Default Loss (Accrued)": df_yearly_summary_main["Total Default Loss (Lifetime)"],
                 "Annual Fee Collected (Accrued)": df_yearly_summary_main["Total Fee Collected (Lifetime)"],
                 "Annual Gross Profit (Accrued)": df_yearly_summary_main["Annual Gross Profit (Accrued from New Cohorts)"],
@@ -427,7 +410,7 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             })
             df_profit_share_main["% Loss Covered by External Capital"] = 0
             mask_main = df_yearly_summary_main["Total Default Loss (Lifetime)"] > 0
-            if mask_main.any(): # Check if there are any True values before using .loc
+            if mask_main.any():
                 df_profit_share_main.loc[mask_main, "% Loss Covered by External Capital"] = \
                     (df_yearly_summary_main.loc[mask_main, "External Capital For Loss (Lifetime)"] / df_yearly_summary_main.loc[mask_main, "Total Default Loss (Lifetime)"]) * 100
             df_profit_share_main.fillna(0, inplace=True)
@@ -436,19 +419,15 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             st.dataframe(df_profit_share_main.style.format(precision=0, thousands=","))
             st.subheader(f"📆 Yearly Summary for {scenario_data_main['name']}")
             st.dataframe(df_yearly_summary_main.style.format(precision=0, thousands=","))
-        else: # df_forecast_main was empty
+        else:
             st.warning(f"No forecast data generated for {scenario_data_main['name']}. Summary tables will be empty.")
             df_monthly_summary_main = pd.DataFrame(columns=["Month"])
             df_yearly_summary_main = pd.DataFrame(columns=["Year"])
             df_profit_share_main = pd.DataFrame(columns=["Year"])
 
         # === 📊 VISUAL CHARTS ===
-        # ... (Charting section remains largely the same, but ensure NII column names used are correct)
-        # It will use "NII This Month (Sum of Avg from New Cohorts)" or "Annual NII (Sum of Avg from New Cohorts)"
-        # or "Annual Total NII (Lifetime from New Cohorts)" depending on what you want to plot.
-        # For consistency with previous charts, let's use the "Sum of Avg" for monthly/annual operational NII charts.
-        # Profit charts will use the "Annual Gross Profit (Accrued from New Cohorts)" which uses the accurate lifetime NII.
-
+        # Charting section remains the same as the last full code version.
+        # It uses the summary tables which are now based on the refined NII and Default logic.
         st.subheader(f"Visual Charts for {scenario_data_main['name']}")
         df_monthly_chart_data_main = df_monthly_summary_main.copy()
         df_yearly_chart_data_main = df_yearly_summary_main.copy()
@@ -460,9 +439,7 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
 
         FIG_SIZE_MAIN = (10, 4.5)
 
-        # Chart 1: Pools Formed vs Cash In (Installments) (Monthly)
         st.markdown("##### Chart 1: Monthly Pools Formed vs. Cash In (Installments)")
-        # ... (Chart 1 code remains the same as it doesn't directly plot NII)
         chart_cols_m1_main = ["Month", "Pools Formed", "Cash In (Installments This Month)"]
         if not df_monthly_chart_data_main.empty and all(col in df_monthly_chart_data_main.columns for col in chart_cols_m1_main):
             fig1_main, ax1_main = plt.subplots(figsize=FIG_SIZE_MAIN)
@@ -486,11 +463,7 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
         else:
             st.caption("Not enough data for Chart 1.")
 
-
-        # Chart 2: Users Joining vs Accrued Profit (Monthly)
         st.markdown("##### Chart 2: Monthly Users Joining vs. Accrued Gross Profit (from New Cohorts)")
-        # This chart uses "Gross Profit This Month (Accrued from New Cohorts)" which correctly uses the granular Total NII (Lifetime)
-        # ... (Chart 2 code remains the same)
         chart_cols_m2_main = ["Month", "Users Joining This Month", "Gross Profit This Month (Accrued from New Cohorts)"]
         if not df_monthly_chart_data_main.empty and all(col in df_monthly_chart_data_main.columns for col in chart_cols_m2_main):
             fig2_main, ax3_main = plt.subplots(figsize=FIG_SIZE_MAIN)
@@ -514,11 +487,8 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
         else:
             st.caption("Not enough data for Chart 2.")
 
-
-        # Chart 3: Pools Formed vs Cash In (Installments) (Yearly)
         st.markdown("##### Chart 3: Annual Pools Formed vs. Annual Cash In (Installments)")
-        # ... (Chart 3 code remains the same)
-        chart_cols_y1_main = ["Year", "Pools Formed", "Cash In (Installments This Month)"] # Name will be sum over year
+        chart_cols_y1_main = ["Year", "Pools Formed", "Cash In (Installments This Month)"]
         if not df_yearly_chart_data_main.empty and all(col in df_yearly_chart_data_main.columns for col in chart_cols_y1_main):
             fig3_main, ax5_main = plt.subplots(figsize=FIG_SIZE_MAIN)
             ax6_main = ax5_main.twinx()
@@ -541,10 +511,7 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
         else:
             st.caption("Not enough data for Chart 3.")
             
-
-        # Chart 4: Users Joining vs Accrued Profit (Yearly)
         st.markdown("##### Chart 4: Annual Users Joining vs. Annual Accrued Gross Profit (from New Cohorts)")
-        # ... (Chart 4 code remains the same)
         chart_cols_y2_main = ["Year", "Users Joining This Month", "Annual Gross Profit (Accrued from New Cohorts)"]
         if not df_yearly_chart_data_main.empty and all(col in df_yearly_chart_data_main.columns for col in chart_cols_y2_main):
             fig4_main, ax7_main = plt.subplots(figsize=FIG_SIZE_MAIN)
@@ -568,11 +535,7 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
         else:
             st.caption("Not enough data for Chart 4.")
 
-
-        # Chart 5: External Capital vs Fee & Profit (Yearly from Profit Share DF)
         st.markdown("##### Chart 5: Annual External Capital vs. Fee & Accrued Profit")
-        # This chart uses "Annual Gross Profit (Accrued from New Cohorts)" from df_profit_share_main which is based on the accurate Total NII (Lifetime)
-        # ... (Chart 5 code remains the same)
         chart_cols_y3_main = ["Year", "External Capital Needed (Annual Accrual)", "Annual Fee Collected (Accrued)", "Annual Gross Profit (Accrued)"]
         if not df_profit_share_chart_data_main.empty and all(col in df_profit_share_chart_data_main.columns for col in chart_cols_y3_main):
             fig5_main, ax9_main = plt.subplots(figsize=FIG_SIZE_MAIN)
@@ -597,7 +560,6 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             st.pyplot(fig5_main)
         else:
             st.caption("Not enough data for Chart 5.")
-
 
         # Export to Excel
         sheet_name_prefix_main = scenario_data_main['name'][:25].replace(" ", "_").replace("/", "_")
