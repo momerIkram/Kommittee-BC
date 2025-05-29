@@ -34,7 +34,7 @@ plt.rcParams.update({
 })
 # --- END: Modern Chart Styling Setup ---
 
-# Helper function to calculate days between two dates specified by month index and day of month
+# Helper function to calculate days between two dates
 def days_between_specific_dates(start_month_idx, start_day_of_month, end_month_idx, end_day_of_month, base_year=2024):
     if start_month_idx > end_month_idx or (start_month_idx == end_month_idx and start_day_of_month >= end_day_of_month):
         return 0
@@ -45,7 +45,7 @@ def days_between_specific_dates(start_month_idx, start_day_of_month, end_month_i
     try:
         date_start = date(start_actual_year, start_actual_month, start_day_of_month)
         date_end = date(end_actual_year, end_actual_month, end_day_of_month)
-        return max(0, (date_end - date_start).days) # Ensure non-negative
+        return max(0, (date_end - date_start).days)
     except ValueError:
         return max(0, (end_month_idx - start_month_idx) * 30 + (end_day_of_month - start_day_of_month))
 
@@ -82,11 +82,10 @@ rest_period = st.sidebar.number_input("Rest Period (months)", value=1)
 default_rate = st.sidebar.number_input("Default Rate (%)", value=1.0)
 default_pre_pct = st.sidebar.number_input("Pre-Payout Default % (of total defaulters)", min_value=0, max_value=100, value=50)
 default_post_pct = 100 - default_pre_pct
-# RENAMED and CLARIFIED this input for new default logic:
-global_penalty_forfeit_pct = st.sidebar.number_input(
-    "Forfeited % of Paid-in by Pre-Payout Defaulter", 
-    min_value=0.0, max_value=100.0, value=90.0, step=1.0,
-    help="Percentage of the amount ALREADY PAID IN by a pre-payout defaulter that is forfeited by them (kept by the platform)."
+global_pre_payout_recovery_pct = st.sidebar.number_input( # Changed from global_penalty_forfeit_pct for clarity with simplified logic
+    "Pre-Payout Default Recovery % (of Total Commitment)", 
+    min_value=0.0, max_value=100.0, value=10.0, step=1.0,
+    help="Percentage of the user's TOTAL COMMITMENT value recovered/not lost by the platform if they default pre-payout."
 )
 
 # === DURATION/SLAB/SLOT CONFIGURATION ===
@@ -132,11 +131,10 @@ for d_config in durations:
         for s_config in range(1, d_config + 1):
             example_slab_sugg = 1000
             total_commit_sugg = d_config * example_slab_sugg
-            avg_nii_sugg_for_fee = total_commit_sugg * ((kibor + spread) / 100 / 12) * sum(range(1, d_config + 1)) / d_config # Simplified NII for fee suggestion
-            # For fee suggestion, use original simpler default loss logic concept if desired
-            pre_def_loss_sugg = total_commit_sugg * (default_rate/100) * (default_pre_pct / 100) # Assuming this is the amount at risk
+            avg_nii_sugg_for_fee = total_commit_sugg * ((kibor + spread) / 100 / 12) * sum(range(1, d_config + 1)) / d_config
+            pre_def_loss_sugg = total_commit_sugg * (default_rate/100) * (default_pre_pct / 100) * (1 - global_pre_payout_recovery_pct / 100)
             post_def_loss_sugg = total_commit_sugg * (default_rate/100) * (default_post_pct / 100)
-            avg_loss_sugg = pre_def_loss_sugg + post_def_loss_sugg # Simplified default impact for fee suggestion
+            avg_loss_sugg = pre_def_loss_sugg + post_def_loss_sugg
             
             suggested_fee_pct_val = 0
             if total_commit_sugg > 0:
@@ -176,14 +174,14 @@ def run_forecast(config_param_fc):
     daily_interest_rate_fc = (current_kibor_rate_fc + current_spread_rate_fc) / 365
     current_rest_period_months_fc = config_param_fc['rest_period']
     current_default_frac_fc = config_param_fc['default_rate'] / 100
-    # Using the new penalty input:
-    current_penalty_forfeit_frac_fc = config_param_fc['penalty_forfeit_pct'] / 100
+    # Using the new simplified penalty input:
+    current_pre_payout_recovery_frac_fc = config_param_fc['pre_payout_recovery_pct'] / 100
     
-    global_default_pre_frac_fc = default_pre_pct / 100 # This comes from global scope, not config_param_fc
-    # global_default_post_frac_fc is 1 - global_default_pre_frac_fc
+    global_default_pre_frac_fc = default_pre_pct / 100
+    # global_default_post_frac_fc derived as 1 - global_default_pre_frac_fc
 
-    for m_idx_fc in range(months_fc): # 0-indexed month of simulation
-        current_month_num_fc = m_idx_fc + 1 # 1-indexed calendar month
+    for m_idx_fc in range(months_fc):
+        current_month_num_fc = m_idx_fc + 1
         current_year_num_fc = m_idx_fc // 12 + 1
         
         durations_for_this_year_fc = yearly_duration_share.get(current_year_num_fc, {})
@@ -201,7 +199,7 @@ def run_forecast(config_param_fc):
                 
                 if dur_val_fc not in slot_fees or dur_val_fc not in slot_distribution: continue
 
-                for slot_num_fc, slot_config_meta_fc in slot_fees[dur_val_fc].items(): # slot_num_fc is 1-indexed
+                for slot_num_fc, slot_config_meta_fc in slot_fees[dur_val_fc].items():
                     if slot_config_meta_fc['blocked']: continue
                     
                     fee_on_commitment_frac_fc = slot_config_meta_fc['fee'] / 100
@@ -233,34 +231,22 @@ def run_forecast(config_param_fc):
                     nii_to_log_for_joining_month = avg_monthly_nii_for_cohort
                     # --- End Granular NII Calculation ---
 
-                    # --- Refined Default Logic ---
+                    # --- SIMPLIFIED Default Logic ---
                     num_defaulters_total_fc = int(users_in_this_specific_cohort_fc * current_default_frac_fc)
                     num_pre_payout_defaulters_fc = int(num_defaulters_total_fc * global_default_pre_frac_fc)
                     num_post_payout_defaulters_fc = num_defaulters_total_fc - num_pre_payout_defaulters_fc
 
-                    # Pre-Payout Defaulter Loss
-                    loss_per_pre_defaulter_fc = 0 # Default to 0 loss if not applicable
-                    if num_pre_payout_defaulters_fc > 0:
-                        num_installments_paid_by_pre_defaulter_estimate = 0
-                        if slot_num_fc > 1:
-                            installments_before_slot = slot_num_fc - 1
-                            num_installments_paid_by_pre_defaulter_estimate = max(1, math.ceil(installments_before_slot * 0.5))
-                        
-                        amount_paid_in_value = num_installments_paid_by_pre_defaulter_estimate * installment_val_fc
-                        amount_forfeited_value = amount_paid_in_value * current_penalty_forfeit_frac_fc
-                        
-                        # Loss: Value of the slot platform might need to cover, less what's recovered via forfeiture
-                        loss_per_pre_defaulter_fc = total_commitment_per_user_fc - amount_forfeited_value
-                        loss_per_pre_defaulter_fc = max(0, loss_per_pre_defaulter_fc) # Loss cannot be negative
-
+                    # Pre-Payout Defaulter Loss (Simplified)
+                    loss_per_pre_defaulter_fc = total_commitment_per_user_fc * (1 - current_pre_payout_recovery_frac_fc)
+                    loss_per_pre_defaulter_fc = max(0, loss_per_pre_defaulter_fc) # Ensure loss is not negative
                     total_pre_payout_loss_fc = num_pre_payout_defaulters_fc * loss_per_pre_defaulter_fc
 
-                    # Post-Payout Defaulter Loss
+                    # Post-Payout Defaulter Loss (Remains the same)
                     loss_per_post_defaulter_fc = total_commitment_per_user_fc 
                     total_post_payout_loss_fc = num_post_payout_defaulters_fc * loss_per_post_defaulter_fc
                     
                     total_loss_for_cohort_fc = total_pre_payout_loss_fc + total_post_payout_loss_fc
-                    # --- End Refined Default Logic ---
+                    # --- End SIMPLIFIED Default Logic ---
                     
                     total_fees_for_cohort_fc = fee_amount_per_user_fc * users_in_this_specific_cohort_fc
                     expected_lifetime_profit_for_cohort_fc = (total_fees_for_cohort_fc + total_nii_for_cohort_duration_fc) - total_loss_for_cohort_fc
@@ -292,17 +278,22 @@ def run_forecast(config_param_fc):
                                               "Installments Collected": cash_in_installments_this_month_cohort_fc, 
                                               "NII This Month (Avg)": nii_to_log_for_joining_month})
                     default_log_data_fc.append({"Month": current_month_num_fc, "Year": current_year_num_fc, 
-                                              "Pre-Payout Defaulters (Cohort)": num_pre_payout_defaulters_fc, # Number of users
-                                              "Post-Payout Defaulters (Cohort)": num_post_payout_defaulters_fc, # Number of users
-                                              "Default Loss (Cohort Lifetime)": total_loss_for_cohort_fc}) # Total monetary loss
+                                              "Pre-Payout Defaulters (Cohort)": num_pre_payout_defaulters_fc,
+                                              "Post-Payout Defaulters (Cohort)": num_post_payout_defaulters_fc,
+                                              "Default Loss (Cohort Lifetime)": total_loss_for_cohort_fc})
                     lifecycle_data_fc.append({"Month": current_month_num_fc, 
                                             "New Users Acquired for Cohort": from_newly_acquired_fc, 
                                             "Rejoining Users for Cohort": from_rejoin_pool_fc,
                                             "Total Onboarding to Cohort": users_in_this_specific_cohort_fc})
 
+                    # *** REFINED REJOIN LOGIC ***
+                    users_completing_cycle_non_default = users_in_this_specific_cohort_fc - num_defaulters_total_fc
+                    users_completing_cycle_non_default = max(0, users_completing_cycle_non_default)
+
                     rejoin_at_month_idx_fc = m_idx_fc + dur_val_fc + int(current_rest_period_months_fc)
                     if rejoin_at_month_idx_fc < months_fc:
-                        rejoin_tracker_fc[rejoin_at_month_idx_fc] = rejoin_tracker_fc.get(rejoin_at_month_idx_fc, 0) + users_in_this_specific_cohort_fc
+                        rejoin_tracker_fc[rejoin_at_month_idx_fc] = rejoin_tracker_fc.get(rejoin_at_month_idx_fc, 0) + users_completing_cycle_non_default
+                    # *** END REFINED REJOIN LOGIC ***
         
         if m_idx_fc + 1 < months_fc:
             growth_base_for_next_month_fc = total_onboarding_this_month_fc
@@ -329,7 +320,7 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
         current_config_main.update({
             "kibor": kibor, "spread": spread, "rest_period": rest_period,
             "default_rate": default_rate, 
-            "penalty_forfeit_pct": global_penalty_forfeit_pct # Pass the new penalty parameter
+            "pre_payout_recovery_pct": global_pre_payout_recovery_pct # Pass the simplified penalty parameter
         })
         
         df_forecast_main, df_deposit_log_main, df_default_log_main, df_lifecycle_main = run_forecast(current_config_main)
@@ -426,8 +417,6 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             df_profit_share_main = pd.DataFrame(columns=["Year"])
 
         # === 📊 VISUAL CHARTS ===
-        # Charting section remains the same as the last full code version.
-        # It uses the summary tables which are now based on the refined NII and Default logic.
         st.subheader(f"Visual Charts for {scenario_data_main['name']}")
         df_monthly_chart_data_main = df_monthly_summary_main.copy()
         df_yearly_chart_data_main = df_yearly_summary_main.copy()
