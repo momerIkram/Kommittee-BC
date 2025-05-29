@@ -34,7 +34,6 @@ plt.rcParams.update({
 })
 # --- END: Modern Chart Styling Setup ---
 
-# Helper function to calculate days between two dates specified by month index and day of month
 def days_between_specific_dates(start_month_idx, start_day_of_month, end_month_idx, end_day_of_month, base_year=2024):
     if start_month_idx > end_month_idx or (start_month_idx == end_month_idx and start_day_of_month >= end_day_of_month):
         return 0
@@ -49,19 +48,22 @@ def days_between_specific_dates(start_month_idx, start_day_of_month, end_month_i
     except ValueError:
         return max(0, int((end_month_idx - start_month_idx) * 30.4375 + (end_day_of_month - start_day_of_month)))
 
-
-# === SCENARIO & UI SETUP ===
 st.title("📊 BACHAT-KOMMITTEE Business Case/Pricing")
 scenarios = []
 scenario_count = st.sidebar.number_input("Number of Scenarios", min_value=1, max_value=3, value=1)
+
+# Placeholder for debug logs - to be controlled per scenario run
+if "debug_log_output" not in st.session_state:
+    st.session_state.debug_log_output = []
+
 for i in range(scenario_count):
     with st.sidebar.expander(f"Scenario {i+1} Settings"):
         name = st.text_input(f"Scenario Name {i+1}", value=f"Scenario {i+1}", key=f"name_{i}")
         total_market = st.number_input("Total Market Size", value=20000000, key=f"market_{i}")
         tam_pct = st.number_input("TAM % of Market", min_value=1, max_value=100, value=10, key=f"tam_pct_{i}")
         start_pct = st.number_input("Starting TAM % (Month 1)", min_value=1, max_value=100, value=10, key=f"start_pct_{i}")
-        # Clarified Label for "Monthly Growth Rate" based on user's definition
-        monthly_growth = st.number_input("Next Month's New Users as % of This Month's Total Onboarding", value=10.0, key=f"growth_{i}", format="%.2f")
+        # REVISED LABEL FOR CLARITY
+        monthly_growth = st.number_input("Acquisition % from Prior Month's Cumulative Onboarded Base", value=10.0, key=f"growth_{i}", format="%.2f")
         annual_growth = st.number_input("Annual TAM Growth (%)", value=5.0, key=f"annual_{i}", format="%.2f")
         cap_tam = st.checkbox("Cap TAM Growth?", value=False, key=f"cap_toggle_{i}")
         scenarios.append({
@@ -70,7 +72,6 @@ for i in range(scenario_count):
             "annual_growth": annual_growth, "cap_tam": cap_tam
         })
 
-# === GLOBAL INPUTS ===
 global_collection_day = st.sidebar.number_input("Collection Day of Month", min_value=1, max_value=28, value=1)
 global_payout_day = st.sidebar.number_input("Payout Day of Month", min_value=1, max_value=28, value=20)
 profit_split = st.sidebar.number_input("Profit Share for Party A (%)", min_value=0, max_value=100, value=50)
@@ -79,7 +80,7 @@ party_b_pct = 1 - party_a_pct
 kibor = st.sidebar.number_input("KIBOR (%)", value=11.0)
 spread = st.sidebar.number_input("Spread (%)", value=1.0)
 rest_period = st.sidebar.number_input("Rest Period (months)", value=1)
-default_rate = st.sidebar.number_input("Default Rate (%)", value=1.0, key="global_default_rate_definitive", format="%.2f")
+default_rate = st.sidebar.number_input("Default Rate (%)", value=1.0, key="global_default_rate_v_final", format="%.2f")
 default_pre_pct = st.sidebar.number_input("Pre-Payout Default % (of total defaulters)", min_value=0, max_value=100, value=50)
 global_pre_payout_recovery_pct = st.sidebar.number_input(
     "Pre-Payout Default Recovery % (of Total Commitment)",
@@ -92,15 +93,11 @@ global_target_profit_margin_pct = st.sidebar.number_input(
     help="Desired profit margin from each user's total commitment, used for Fee Suggestion Calculator IF enabled below."
 )
 use_target_profit_margin_for_fee_sugg = st.sidebar.checkbox(
-    "Enable Target Profit Margin for Fee Suggestion",
-    value=True,
-    key="enable_target_profit_fee_sugg_definitive",
+    "Enable Target Profit Margin for Fee Suggestion", value=True, key="enable_target_profit_fee_sugg_v_final",
     help="If checked, fee suggestion aims for Target Profit Margin. If unchecked, aims to cover NII & losses (breakeven)."
 )
 default_post_pct = 100 - default_pre_pct
 
-
-# === DURATION/SLAB/SLOT CONFIGURATION ===
 validation_messages = []
 durations_input = st.multiselect("Select Durations (months)", [3, 4, 5, 6, 8, 10], default=[3])
 durations = [int(d) for d in durations_input]
@@ -121,13 +118,13 @@ for y_config in range(1, 6):
             default_val_to_use = 0
             if y_config == 1: default_val_to_use = 100 if durations and d_config == durations[0] else 0
             else: default_val_to_use = first_year_defaults.get(d_config, 0)
-            val_config = st.number_input(f"{d_config}M–Year {y_config}(%)", 0, 100, default_val_to_use, 1, key=key_config)
+            val_config = st.number_input(f"{d_config}M–Yr{y_config}(%)", 0,100,default_val_to_use,1,key=key_config)
             yearly_duration_share[y_config][d_config] = val_config
             if y_config == 1: first_year_defaults[d_config] = val_config
             total_dur_share_config += val_config
         if durations and abs(total_dur_share_config - 100.0) > 1e-7 and total_dur_share_config != 0:
-            if total_dur_share_config > 100: validation_messages.append(f"Y{y_config} Dur Share {total_dur_share_config}% >100%.")
-            elif total_dur_share_config < 100: validation_messages.append(f"Y{y_config} Dur Share {total_dur_share_config}% <100%.")
+            if total_dur_share_config > 100: validation_messages.append(f"Y{y_config}DurShr {total_dur_share_config}% >100%.")
+            elif total_dur_share_config < 100: validation_messages.append(f"Y{y_config}DurShr {total_dur_share_config}% <100%.")
 
 for d_config in durations:
     with st.expander(f"{d_config}M Slab Distribution"):
@@ -137,7 +134,7 @@ for d_config in durations:
         for i_slab, slab_amount_config in enumerate(slab_options):
             key_config = f"slab_{d_config}_{slab_amount_config}"
             current_default = 100 if i_slab == 0 else 0
-            val_config = st.number_input(f"Slab {slab_amount_config}–{d_config}M(%)", 0,100,current_default,1,key=key_config)
+            val_config = st.number_input(f"Slab {slab_amount_config}–{d_config}M(%)",0,100,current_default,1,key=key_config)
             slab_map[d_config][slab_amount_config] = val_config
             total_slab_pct_config += val_config
         if abs(total_slab_pct_config - 100.0) > 1e-7 and total_slab_pct_config != 0:
@@ -149,32 +146,32 @@ for d_config in durations:
         total_slot_dist_pct_config = 0
         for s_config in range(1, d_config + 1):
             example_slab_sugg = 1000; total_commit_sugg = d_config * example_slab_sugg
-            current_kibor_sugg_frac = kibor / 100; current_spread_sugg_frac = spread / 100
-            current_default_rate_sugg_frac = default_rate / 100; current_default_pre_pct_sugg_frac = default_pre_pct / 100
-            current_default_post_pct_sugg_frac = default_post_pct / 100
-            current_g_pre_payout_recovery_sugg_frac = global_pre_payout_recovery_pct / 100
+            current_kibor_sugg_frac = kibor/100; current_spread_sugg_frac = spread/100
+            current_default_rate_sugg_frac = default_rate/100; current_default_pre_pct_sugg_frac = default_pre_pct/100
+            current_default_post_pct_sugg_frac = default_post_pct/100
+            current_g_pre_payout_recovery_sugg_frac = global_pre_payout_recovery_pct/100
             if use_target_profit_margin_for_fee_sugg:
-                current_g_target_profit_margin_sugg_frac = global_target_profit_margin_pct / 100
+                current_g_target_profit_margin_sugg_frac = global_target_profit_margin_pct/100
                 target_profit_margin_display_for_help = global_target_profit_margin_pct
             else:
                 current_g_target_profit_margin_sugg_frac = 0.0; target_profit_margin_display_for_help = 0.0
-            total_nii_sugg_per_user_lifetime = example_slab_sugg * ((current_kibor_sugg_frac + current_spread_sugg_frac) / 12) * (d_config * (d_config + 1) / 2)
-            loss_from_pre_defaulter_sugg = total_commit_sugg * (1 - current_g_pre_payout_recovery_sugg_frac)
-            loss_from_post_defaulter_sugg = total_commit_sugg * 1
-            expected_loss_per_defaulter_sugg = (current_default_pre_pct_sugg_frac * loss_from_pre_defaulter_sugg) + (current_default_post_pct_sugg_frac * loss_from_post_defaulter_sugg)
-            avg_loss_sugg_per_user = current_default_rate_sugg_frac * expected_loss_per_defaulter_sugg
-            target_profit_amount_sugg_per_user = total_commit_sugg * current_g_target_profit_margin_sugg_frac
+            total_nii_sugg_per_user_lifetime = example_slab_sugg * ((current_kibor_sugg_frac+current_spread_sugg_frac)/12) * (d_config*(d_config+1)/2)
+            loss_from_pre_defaulter_sugg = total_commit_sugg * (1-current_g_pre_payout_recovery_sugg_frac)
+            loss_from_post_defaulter_sugg = total_commit_sugg*1
+            expected_loss_per_defaulter_sugg = (current_default_pre_pct_sugg_frac*loss_from_pre_defaulter_sugg)+(current_default_post_pct_sugg_frac*loss_from_post_defaulter_sugg)
+            avg_loss_sugg_per_user = current_default_rate_sugg_frac*expected_loss_per_defaulter_sugg
+            target_profit_amount_sugg_per_user = total_commit_sugg*current_g_target_profit_margin_sugg_frac
             suggested_fee_amount_sugg_per_user = target_profit_amount_sugg_per_user - total_nii_sugg_per_user_lifetime + avg_loss_sugg_per_user
-            suggested_fee_pct_val = (suggested_fee_amount_sugg_per_user / total_commit_sugg) * 100 if total_commit_sugg > 0 else 0
+            suggested_fee_pct_val = (suggested_fee_amount_sugg_per_user/total_commit_sugg)*100 if total_commit_sugg > 0 else 0
             suggested_fee_pct_val = max(0, suggested_fee_pct_val)
-            help_text_sugg = (f"Sugg: {suggested_fee_pct_val:.1f}%. TargetProfit={target_profit_margin_display_for_help:.1f}% (On: {use_target_profit_margin_for_fee_sugg}).")
-            key_fee_config = f"fee_{d_config}_{s_config}"; key_block_config = f"block_{d_config}_{s_config}"; key_pct_config = f"slot_pct_d{d_config}_s{s_config}"
+            help_text_sugg = (f"SuggFee:{suggested_fee_pct_val:.1f}%. TargetProfit:{target_profit_margin_display_for_help:.1f}%(On:{use_target_profit_margin_for_fee_sugg}).")
+            key_fee_config=f"fee_{d_config}_{s_config}"; key_block_config=f"block_{d_config}_{s_config}"; key_pct_config=f"slot_pct_d{d_config}_s{s_config}"
             current_slot_default_pct = 100 if s_config == 1 else 0
-            fee_input_val = st.number_input(f"S{s_config} Fee%", 0.0,100.0,1.0,key=key_fee_config,help=help_text_sugg,format="%.2f")
-            blocked_input_val = st.checkbox(f"Block S{s_config}",key=key_block_config,value=(s_config != 1))
-            slot_pct_input_val = st.number_input(f"S{s_config} %Users",0,100,current_slot_default_pct,1,key=key_pct_config)
-            slot_fees[d_config][s_config] = {"fee": fee_input_val, "blocked": blocked_input_val}
-            slot_distribution[d_config][s_config] = slot_pct_input_val
+            fee_input_val = st.number_input(f"S{s_config}Fee%",0.0,100.0,1.0,key=key_fee_config,help=help_text_sugg,format="%.2f")
+            blocked_input_val = st.checkbox(f"BlockS{s_config}",key=key_block_config,value=(s_config!=1))
+            slot_pct_input_val = st.number_input(f"S{s_config}%Users",0,100,current_slot_default_pct,1,key=key_pct_config)
+            slot_fees[d_config][s_config]={"fee":fee_input_val,"blocked":blocked_input_val}
+            slot_distribution[d_config][s_config]=slot_pct_input_val
             total_slot_dist_pct_config += slot_pct_input_val
         if abs(total_slot_dist_pct_config - 100.0) > 1e-7 and total_slot_dist_pct_config != 0 :
             if total_slot_dist_pct_config > 100 : validation_messages.append(f"{d_config}M Slot {total_slot_dist_pct_config}% >100%.")
@@ -196,7 +193,7 @@ def apportion_users(total_users_to_apportion, shares_dict):
     quotas = {item: int(alloc) for item, alloc in exact_allocations.items()}
     remainders = {item: alloc - quotas[item] for item, alloc in exact_allocations.items()}
     current_total_allocated = sum(quotas.values())
-    remaining_to_allocate = total_users_to_apportion - current_total_allocated # This can be float
+    remaining_to_allocate = total_users_to_apportion - current_total_allocated
     sorted_by_remainder = sorted(remainders.items(), key=lambda x: x[1], reverse=True)
     for i in range(int(round(remaining_to_allocate))):
         if i < len(sorted_by_remainder):
@@ -208,10 +205,11 @@ def apportion_users(total_users_to_apportion, shares_dict):
     return final_allocations
 
 # === FORECASTING LOGIC ===
-def run_forecast(config_param_fc):
+def run_forecast(config_param_fc, scenario_debug_log): # Pass the debug log list
     months_fc = 60
     initial_tam_fc = int(config_param_fc['total_market'] * config_param_fc['tam_pct'] / 100)
     new_users_monthly_fc = [int(initial_tam_fc * (config_param_fc['start_pct'] / 100))]
+    
     rejoin_tracker_fc = {}
     forecast_data_fc, deposit_log_data_fc, default_log_data_fc, lifecycle_data_fc = [], [], [], []
     
@@ -228,24 +226,33 @@ def run_forecast(config_param_fc):
     current_default_frac_fc = config_param_fc['default_rate'] / 100
     current_pre_payout_recovery_frac_fc = config_param_fc['global_pre_payout_recovery_pct'] / 100
     
-    # Using global default_pre_pct and default_post_pct from the top of the script scope
-    # No need to redefine global_default_pre_frac_fc and global_default_post_frac_fc here.
-
-    DEBUG_MODE = True # Set to True to see debug st.write statements
+    DEBUG_MODE = True 
+    
+    # This will store the cumulative base for growth as per user's latest clarification
+    cumulative_onboarded_base_for_growth = 0
 
     for m_idx_fc in range(months_fc):
         current_month_num_fc = m_idx_fc + 1
         current_year_num_fc = m_idx_fc // 12 + 1
         
-        current_month_new_users_fc = new_users_monthly_fc[m_idx_fc] if m_idx_fc < len(new_users_monthly_fc) else 0
+        if m_idx_fc == 0:
+            current_month_new_users_fc = new_users_monthly_fc[0]
+            cumulative_onboarded_base_for_growth = current_month_new_users_fc # Initialize with M1 new users
+        else:
+            # For M2 onwards, new users are calculated at the END of the previous loop iteration.
+            current_month_new_users_fc = new_users_monthly_fc[m_idx_fc] if m_idx_fc < len(new_users_monthly_fc) else 0
+        
         rejoining_users_this_month_fc = rejoin_tracker_fc.get(m_idx_fc, 0)
         total_onboarding_this_month_fc = current_month_new_users_fc + rejoining_users_this_month_fc
 
         if DEBUG_MODE and m_idx_fc < 24 :
-            st.write(f"--- Month {current_month_num_fc} (m_idx_fc: {m_idx_fc}) ---")
-            st.write(f"New Users This Month (from list): {current_month_new_users_fc}")
-            st.write(f"Rejoining Users This Month: {rejoining_users_this_month_fc}")
-            st.write(f"Total Onboarding This Month (for distribution): {total_onboarding_this_month_fc}")
+            scenario_debug_log.append(f"--- Month {current_month_num_fc} (m_idx_fc: {m_idx_fc}) ---")
+            scenario_debug_log.append(f"New Users This Month (from list): {current_month_new_users_fc}")
+            scenario_debug_log.append(f"Rejoining Users This Month: {rejoining_users_this_month_fc}")
+            scenario_debug_log.append(f"Total Onboarding This Month (for distribution): {total_onboarding_this_month_fc}")
+            if m_idx_fc > 0: # Base for M1 is just its own new users for calculating M2's new users
+                 scenario_debug_log.append(f"Cumulative Onboarded Base (End of M{current_month_num_fc-1}, for M{current_month_num_fc} new user calc): {cumulative_onboarded_base_for_growth}")
+
 
         durations_for_this_year_fc_shares = yearly_duration_share.get(current_year_num_fc, {})
         active_duration_shares = {d: s for d, s in durations_for_this_year_fc_shares.items() if s > 0 and d in durations}
@@ -261,10 +268,7 @@ def run_forecast(config_param_fc):
                 for installment_val_fc, users_for_this_slab_fc in apportioned_users_by_slab.items():
                     if users_for_this_slab_fc == 0: continue
                     if dur_val_fc not in slot_fees or dur_val_fc not in slot_distribution: continue
-                    current_slot_shares_fc = {
-                        s: p for s, p in slot_distribution[dur_val_fc].items()
-                        if s in slot_fees[dur_val_fc] and not slot_fees[dur_val_fc][s]['blocked'] and p > 0
-                    }
+                    current_slot_shares_fc = {s: p for s, p in slot_distribution[dur_val_fc].items() if s in slot_fees[dur_val_fc] and not slot_fees[dur_val_fc][s]['blocked'] and p > 0}
                     if not current_slot_shares_fc: continue
                     apportioned_users_by_slot = apportion_users(users_for_this_slab_fc, current_slot_shares_fc)
                     for slot_num_fc, users_in_this_specific_cohort_fc in apportioned_users_by_slot.items():
@@ -273,22 +277,19 @@ def run_forecast(config_param_fc):
                         fee_on_commitment_frac_fc = slot_config_meta_fc['fee'] / 100
                         total_commitment_per_user_fc = installment_val_fc * dur_val_fc
                         fee_amount_per_user_fc = total_commitment_per_user_fc * fee_on_commitment_frac_fc
-                        from_rejoin_pool_fc = 0
-                        from_newly_acquired_fc = users_in_this_specific_cohort_fc
+                        from_rejoin_pool_fc = 0; from_newly_acquired_fc = users_in_this_specific_cohort_fc
                         total_nii_for_cohort_lifetime_per_user = 0
                         payout_due_month_idx_for_cohort_fc = m_idx_fc + slot_num_fc - 1
                         for j_installment_num in range(dur_val_fc):
                             collection_month_of_this_installment_idx = m_idx_fc + j_installment_num
-                            days_this_installment_held = days_between_specific_dates(
-                                collection_month_of_this_installment_idx, global_collection_day,
-                                payout_due_month_idx_for_cohort_fc, global_payout_day)
+                            days_this_installment_held = days_between_specific_dates(collection_month_of_this_installment_idx, global_collection_day, payout_due_month_idx_for_cohort_fc, global_payout_day)
                             nii_from_this_installment = installment_val_fc * daily_interest_rate_fc * days_this_installment_held
                             total_nii_for_cohort_lifetime_per_user += nii_from_this_installment
                         total_nii_for_cohort_duration_fc = total_nii_for_cohort_lifetime_per_user * users_in_this_specific_cohort_fc
                         avg_monthly_nii_for_cohort = total_nii_for_cohort_duration_fc / dur_val_fc if dur_val_fc > 0 else 0
                         nii_to_log_for_joining_month = avg_monthly_nii_for_cohort
                         num_defaulters_total_fc = int(round(users_in_this_specific_cohort_fc * current_default_frac_fc))
-                        num_pre_payout_defaulters_fc = int(round(num_defaulters_total_fc * (default_pre_pct / 100.0))) # Use global default_pre_pct
+                        num_pre_payout_defaulters_fc = int(round(num_defaulters_total_fc * (default_pre_pct / 100.0)))
                         num_post_payout_defaulters_fc = num_defaulters_total_fc - num_pre_payout_defaulters_fc
                         loss_per_pre_defaulter_fc = total_commitment_per_user_fc * (1 - current_pre_payout_recovery_frac_fc)
                         total_pre_payout_loss_fc = num_pre_payout_defaulters_fc * loss_per_pre_defaulter_fc
@@ -302,64 +303,93 @@ def run_forecast(config_param_fc):
                         payout_amount_scheduled_for_cohort_fc = users_in_this_specific_cohort_fc * total_commitment_per_user_fc
                         pools_formed_by_this_cohort_fc = users_in_this_specific_cohort_fc / dur_val_fc if dur_val_fc > 0 else 0
                         external_capital_needed_for_cohort_lifetime_fc = max(0, total_loss_for_cohort_fc - (total_fees_for_cohort_fc + total_nii_for_cohort_duration_fc))
-                        forecast_data_fc.append({
-                            "Month Joined": current_month_num_fc, "Year Joined": current_year_num_fc,
-                            "Duration": dur_val_fc, "Slab Installment": installment_val_fc, "Assigned Slot": slot_num_fc,
-                            "Users": users_in_this_specific_cohort_fc, "Pools Formed": pools_formed_by_this_cohort_fc,
-                            "Total Commitment/User": total_commitment_per_user_fc,
-                            "Fee % (on Total Commitment)": fee_on_commitment_frac_fc * 100,
-                            "Total Fee Collected (Lifetime)": total_fees_for_cohort_fc,
-                            "NII Earned This Month (Avg)": nii_to_log_for_joining_month,
-                            "Total NII (Lifetime)": total_nii_for_cohort_duration_fc,
-                            "Expected Lifetime Profit": expected_lifetime_profit_for_cohort_fc,
-                            "Cash In (Installments This Month)": cash_in_installments_this_month_cohort_fc,
-                            "Payout Due Month": payout_due_calendar_month_for_cohort_fc,
-                            "Payout Amount Scheduled": payout_amount_scheduled_for_cohort_fc,
-                            "Total Default Loss (Lifetime)": total_loss_for_cohort_fc,
-                            "External Capital For Loss (Lifetime)": external_capital_needed_for_cohort_lifetime_fc})
+                        forecast_data_fc.append({"Month Joined": current_month_num_fc, "Year Joined": current_year_num_fc, "Duration": dur_val_fc, "Slab Installment": installment_val_fc, "Assigned Slot": slot_num_fc, "Users": users_in_this_specific_cohort_fc, "Pools Formed": pools_formed_by_this_cohort_fc, "Total Commitment/User": total_commitment_per_user_fc, "Fee % (on Total Commitment)": fee_on_commitment_frac_fc * 100, "Total Fee Collected (Lifetime)": total_fees_for_cohort_fc, "NII Earned This Month (Avg)": nii_to_log_for_joining_month, "Total NII (Lifetime)": total_nii_for_cohort_duration_fc, "Expected Lifetime Profit": expected_lifetime_profit_for_cohort_fc, "Cash In (Installments This Month)": cash_in_installments_this_month_cohort_fc, "Payout Due Month": payout_due_calendar_month_for_cohort_fc, "Payout Amount Scheduled": payout_amount_scheduled_for_cohort_fc, "Total Default Loss (Lifetime)": total_loss_for_cohort_fc, "External Capital For Loss (Lifetime)": external_capital_needed_for_cohort_lifetime_fc})
                         deposit_log_data_fc.append({"Month": current_month_num_fc, "Users Joining": users_in_this_specific_cohort_fc,"Installments Collected": cash_in_installments_this_month_cohort_fc,"NII This Month (Avg)": nii_to_log_for_joining_month})
                         default_log_data_fc.append({"Month": current_month_num_fc, "Year": current_year_num_fc, "Pre-Payout Defaulters (Cohort)": num_pre_payout_defaulters_fc, "Post-Payout Defaulters (Cohort)": num_post_payout_defaulters_fc, "Default Loss (Cohort Lifetime)": total_loss_for_cohort_fc})
                         lifecycle_data_fc.append({"Month": current_month_num_fc, "New Users Acquired for Cohort": from_newly_acquired_fc, "Rejoining Users for Cohort": from_rejoin_pool_fc, "Total Onboarding to Cohort": users_in_this_specific_cohort_fc})
                         rejoin_at_month_idx_fc = m_idx_fc + dur_val_fc + int(current_rest_period_months_fc)
                         if rejoin_at_month_idx_fc < months_fc:
                             rejoin_tracker_fc[rejoin_at_month_idx_fc] = rejoin_tracker_fc.get(rejoin_at_month_idx_fc, 0) + users_in_this_specific_cohort_fc
-        
-        # --- Calculate NEW USERS for the NEXT month ---
+        else:
+             if DEBUG_MODE and m_idx_fc < 24:
+                scenario_debug_log.append(f"Month {current_month_num_fc}: No users onboarded or no active durations to distribute to.")
+
+        # Update cumulative base for next month's new user calculation
+        if m_idx_fc > 0 : # For M2 onwards, the base is the cumulative sum up to *previous* month's new users
+             cumulative_onboarded_base_for_growth += current_month_new_users_fc # Add this month's NEW users
+        # For M1 (m_idx_fc = 0), cumulative_onboarded_base_for_growth was already set to M1's new users
+        # effectively making Total Onboarding of M1 (which is just M1 new users at that point) the base for M2's new users.
+
+        # --- Calculate NEW USERS for the NEXT month (m_idx_fc + 1)---
         if m_idx_fc + 1 < months_fc:
-            # LOGIC AS PER USER'S DEFINITION:
-            # New Users for Next Month = Total Onboarding This Month * ("Monthly Growth Rate" / 100)
-            growth_base = total_onboarding_this_month_fc # Total users onboarded in the current month
+            # Logic based on user's example: M2_New = M1_Total_Onboarding * Rate; M3_New = M2_Total_Cumulative * Rate
+            # This requires a running cumulative total as the base after M1.
+
+            if m_idx_fc == 0: # For calculating M2's new users
+                growth_base = total_onboarding_this_month_fc # This is M1's Total Onboarding
+            else: # For calculating M3 onwards
+                growth_base = cumulative_onboarded_base_for_growth # This is sum of all new users up to current month m_idx_fc
+
             acquisition_percentage = config_param_fc['monthly_growth'] / 100.0
             
             next_month_new_users_value = growth_base * acquisition_percentage
             next_month_new_users_calculated = int(round(next_month_new_users_value))
 
             if DEBUG_MODE and m_idx_fc < 23:
-                st.write(f"  Calculating New Users for Next Month (M{current_month_num_fc+1}):")
-                st.write(f"    Base for New User Calc (Total Onboarding M{current_month_num_fc}): {growth_base}")
-                st.write(f"    Acquisition Percentage from Total Onboarding: {acquisition_percentage*100:.2f}%")
-                st.write(f"    New Users Value (float) for M{current_month_num_fc+1}: {next_month_new_users_value:.2f}")
-                st.write(f"    New Users Calculated (rounded int) for M{current_month_num_fc+1}: {next_month_new_users_calculated}")
+                scenario_debug_log.append(f"  Calculating New Users for Next Month (M{current_month_num_fc+1}):")
+                scenario_debug_log.append(f"    Base for New User Calc: {growth_base}")
+                scenario_debug_log.append(f"    Acquisition Percentage: {acquisition_percentage*100:.2f}%")
+                scenario_debug_log.append(f"    New Users Value (float) for M{current_month_num_fc+1}: {next_month_new_users_value:.2f}")
+                scenario_debug_log.append(f"    New Users Calculated (rounded int) for M{current_month_num_fc+1}: {next_month_new_users_calculated}")
             
             if is_cap_enforced_in_config:
                 if (m_idx_fc + 1) % 12 == 0:
                     TAM_current_year_fc = int(TAM_current_year_fc * (1 + config_param_fc['annual_growth'] / 100))
                     TAM_used_cumulative_fc = 0
-                
                 if (TAM_used_cumulative_fc + next_month_new_users_calculated) > TAM_current_year_fc :
                     next_month_new_users_final = max(0, TAM_current_year_fc - TAM_used_cumulative_fc)
                 else:
                     next_month_new_users_final = next_month_new_users_calculated
-                TAM_used_cumulative_fc += next_month_new_users_final 
-            else: 
+                TAM_used_cumulative_fc += next_month_new_users_final
+            else:
                 next_month_new_users_final = next_month_new_users_calculated
             
             new_users_monthly_fc.append(next_month_new_users_final)
             
             if DEBUG_MODE and m_idx_fc < 23:
-                 st.write(f"    New Users Appended for M{current_month_num_fc+1}: {next_month_new_users_final}")
+                 scenario_debug_log.append(f"    New Users Appended for M{current_month_num_fc+1}: {next_month_new_users_final}")
                  if is_cap_enforced_in_config:
-                     st.write(f"    TAM Used Cumulative: {TAM_used_cumulative_fc}, Current Year TAM: {TAM_current_year_fc}")
+                     scenario_debug_log.append(f"    TAM Used Cumulative: {TAM_used_cumulative_fc}, Current Year TAM: {TAM_current_year_fc}")
+        
+        # After processing the current month (m_idx_fc) and calculating next month's new users (m_idx_fc+1),
+        # Update the cumulative base FOR THE NEXT ITERATION's M_IDX_FC.
+        # The cumulative base should always be sum of NEW USERS up to the current m_idx_fc, 
+        # which will be used for calculating new users for m_idx_fc+2 based on total onboarding of m_idx_fc+1.
+        # This cumulative_onboarded_base_for_growth has to be updated carefully.
+        
+        # For next iteration: The cumulative base for calculating NewUsers[m_idx_fc+2] will be 
+        # sum of NewUsers[0]...NewUsers[m_idx_fc+1] if using your explicit step by step
+        # Or Sum of TotalOnboarding[0]...TotalOnboarding[m_idx_fc]
+        
+        # Let's strictly follow your example logic path as the primary interpretation now:
+        # M1_New = 20k
+        # M2_New = M1_TotalOnboarding * Rate  (M1_TotalOnboarding = M1_New as no rejoins)
+        #          -> So, growth_base for M2's calc was M1_TotalOnboarding.
+        # M3_New = CumulativeBase_EndOf_M1 (20k) + M2_NewUsers_JustCalculated (2k) => 22k * Rate
+        # No, this is where your text explanation deviates a little.
+        # Let's take the structure:
+        # NewUsers[n+1] = Base[n] * Rate
+        # Base[n] for NewUsers[n+1] calculation is TotalOnboardedSoFar[n]
+        
+        # Re-evaluating "cumulative_onboarded_base_for_growth":
+        # At the start of iteration m_idx_fc=0 (Month 1):
+        #   current_month_new_users_fc = 20000
+        #   cumulative_onboarded_base_for_growth = 20000 (this is used for calc of Month 2 new users)
+        # At the start of iteration m_idx_fc=1 (Month 2):
+        #   current_month_new_users_fc = 2000 (calc'd using base of 20000)
+        #   Now, for calculating Month 3's new users, the base should be "22000" according to your example.
+        #   "22000" = Month 1's Onboarding (20000) + Month 2's New Users (2000) -- (NOT Month 2's Total Onboarding)
+        # This seems like a cumulative sum of *actual users on platform started up to previous month*.
 
     df_forecast_fc = pd.DataFrame(forecast_data_fc).fillna(0)
     df_deposit_log_fc = pd.DataFrame(deposit_log_data_fc).fillna(0)
@@ -367,28 +397,38 @@ def run_forecast(config_param_fc):
     df_lifecycle_fc = pd.DataFrame(lifecycle_data_fc).fillna(0)
     return df_forecast_fc, df_deposit_log_fc, df_default_log_fc, df_lifecycle_fc
 
-# === EXPORT AND DISPLAY ===
+# === EXPORT AND DISPLAY === (Copied from your provided file input_file_0.py)
 output_excel_main = io.BytesIO()
 with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main:
-    if "debug_placeholder" not in st.session_state: 
+    if "debug_placeholder" not in st.session_state: # To control debug print area if needed
         st.session_state.debug_placeholder = st.empty()
 
     for scenario_idx_main, scenario_data_main in enumerate(scenarios):
-        if scenario_idx_main > 0 : 
+        if scenario_idx_main > 0 : # Try to clear placeholder for subsequent scenarios if st.write was used in placeholder
             st.session_state.debug_placeholder.empty()
         
+        st.session_state.debug_log_output = [] # Clear/initialize log for this scenario
+
         current_config_main = scenario_data_main.copy()
         current_config_main.update({
             "kibor": kibor, "spread": spread, "rest_period": rest_period,
-            "default_rate": default_rate, 
+            "default_rate": default_rate, # global default_rate
             "global_pre_payout_recovery_pct": global_pre_payout_recovery_pct
+            # "cap_tam" is already in scenario_data_main from the UI config
         })
         
-        df_forecast_main, df_deposit_log_main, df_default_log_main, df_lifecycle_main = run_forecast(current_config_main)
+        df_forecast_main, df_deposit_log_main, df_default_log_main, df_lifecycle_main = run_forecast(current_config_main, st.session_state.debug_log_output)
         
+        # Display debug logs in an expander for this scenario
+        with st.expander(f"Debug Log for Scenario: {scenario_data_main['name']}", expanded=False):
+            log_text = "\n".join(st.session_state.debug_log_output)
+            st.text_area("Log:", log_text, height=300)
+
+
         st.header(f"Scenario: {scenario_data_main['name']}")
         st.subheader(f"📘 Raw Forecast Data (Cohorts by Joining Month)")
         if not df_forecast_main.empty:
+            # Apply formatting for display
             format_dict = {col: "{:,.0f}" for col in df_forecast_main.columns if df_forecast_main[col].dtype in ['int64', 'float64'] and col not in ['Month Joined', 'Year Joined', 'Duration', 'Assigned Slot']}
             if 'Pools Formed' in df_forecast_main.columns: format_dict["Pools Formed"] = "{:,.2f}" 
             if 'Fee % (on Total Commitment)' in df_forecast_main.columns: format_dict["Fee % (on Total Commitment)"] = "{:,.2f}"
@@ -397,6 +437,7 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             
             st.dataframe(df_forecast_main.style.format(existing_format_dict))
 
+            # --- Derive Monthly Summary ---
             df_monthly_direct_main = df_forecast_main.groupby("Month Joined")[
                 ["Cash In (Installments This Month)", "NII Earned This Month (Avg)", "Pools Formed", "Users"]
             ].sum().reset_index().rename(columns={"Month Joined": "Month", 
@@ -440,6 +481,7 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             ]
             st.dataframe(df_monthly_summary_main[cols_to_display_monthly_main].style.format(precision=0, thousands=","))
 
+            # --- Derive Yearly Summary ---
             df_monthly_summary_main["Year"] = ((df_monthly_summary_main["Month"] - 1) // 12) + 1
             df_yearly_summary_main = df_monthly_summary_main.groupby("Year")[
                 ["Users Joining This Month", "Pools Formed", "Cash In (Installments This Month)", 
@@ -466,6 +508,7 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             }
             df_yearly_summary_main.rename(columns=yearly_rename_map, inplace=True)
 
+            # --- Profit Share Summary ---
             df_profit_share_main = pd.DataFrame({
                 "Year": df_yearly_summary_main["Year"],
                 "External Capital Needed (Annual Accrual)": df_yearly_summary_main["Annual External Capital For Loss (Lifetime from New Cohorts)"],
@@ -481,11 +524,13 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             if not df_yearly_summary_main.empty and \
                "Annual Total Default Loss (Lifetime from New Cohorts)" in df_yearly_summary_main.columns and \
                df_yearly_summary_main["Annual Total Default Loss (Lifetime from New Cohorts)"].gt(0).any():
+                
                 mask_main = df_yearly_summary_main["Annual Total Default Loss (Lifetime from New Cohorts)"] > 0
                 if "Annual External Capital For Loss (Lifetime from New Cohorts)" in df_yearly_summary_main.columns:
                     df_profit_share_main.loc[mask_main, "% Loss Covered by External Capital"] = \
                         (df_yearly_summary_main.loc[mask_main, "Annual External Capital For Loss (Lifetime from New Cohorts)"] / \
                          df_yearly_summary_main.loc[mask_main, "Annual Total Default Loss (Lifetime from New Cohorts)"]) * 100
+            
             df_profit_share_main.fillna(0, inplace=True)
 
             st.subheader(f"💰 Profit Share Summary for {scenario_data_main['name']}")
