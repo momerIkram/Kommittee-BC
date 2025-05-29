@@ -52,7 +52,6 @@ st.title("📊 BACHAT-KOMMITTEE Business Case/Pricing")
 scenarios = []
 scenario_count = st.sidebar.number_input("Number of Scenarios", min_value=1, max_value=3, value=1)
 
-# Placeholder for debug logs - to be controlled per scenario run
 if "debug_log_output" not in st.session_state:
     st.session_state.debug_log_output = []
 
@@ -62,13 +61,13 @@ for i in range(scenario_count):
         total_market = st.number_input("Total Market Size", value=20000000, key=f"market_{i}")
         tam_pct = st.number_input("TAM % of Market", min_value=1, max_value=100, value=10, key=f"tam_pct_{i}")
         start_pct = st.number_input("Starting TAM % (Month 1)", min_value=1, max_value=100, value=10, key=f"start_pct_{i}")
-        # REVISED LABEL FOR CLARITY
-        monthly_growth = st.number_input("Acquisition % from Prior Month's Cumulative Onboarded Base", value=10.0, key=f"growth_{i}", format="%.2f")
+        # UPDATED LABEL FOR CLARITY
+        monthly_growth = st.number_input("Next Mth New Users as % of Cumul. Onboarded Users Base", value=10.0, key=f"growth_{i}", format="%.2f", help="Calculates next month's new users as this % of (all new users acquired to date + all rejoining users to date).")
         annual_growth = st.number_input("Annual TAM Growth (%)", value=5.0, key=f"annual_{i}", format="%.2f")
         cap_tam = st.checkbox("Cap TAM Growth?", value=False, key=f"cap_toggle_{i}")
         scenarios.append({
             "name": name, "total_market": total_market, "tam_pct": tam_pct,
-            "start_pct": start_pct, "monthly_growth": monthly_growth, # This will be used as the acquisition percentage
+            "start_pct": start_pct, "monthly_growth": monthly_growth,
             "annual_growth": annual_growth, "cap_tam": cap_tam
         })
 
@@ -80,7 +79,7 @@ party_b_pct = 1 - party_a_pct
 kibor = st.sidebar.number_input("KIBOR (%)", value=11.0)
 spread = st.sidebar.number_input("Spread (%)", value=1.0)
 rest_period = st.sidebar.number_input("Rest Period (months)", value=1)
-default_rate = st.sidebar.number_input("Default Rate (%)", value=1.0, key="global_default_rate_v_final", format="%.2f")
+default_rate = st.sidebar.number_input("Default Rate (%)", value=1.0, key="global_default_rate_v_final2", format="%.2f")
 default_pre_pct = st.sidebar.number_input("Pre-Payout Default % (of total defaulters)", min_value=0, max_value=100, value=50)
 global_pre_payout_recovery_pct = st.sidebar.number_input(
     "Pre-Payout Default Recovery % (of Total Commitment)",
@@ -93,7 +92,7 @@ global_target_profit_margin_pct = st.sidebar.number_input(
     help="Desired profit margin from each user's total commitment, used for Fee Suggestion Calculator IF enabled below."
 )
 use_target_profit_margin_for_fee_sugg = st.sidebar.checkbox(
-    "Enable Target Profit Margin for Fee Suggestion", value=True, key="enable_target_profit_fee_sugg_v_final",
+    "Enable Target Profit Margin for Fee Suggestion", value=True, key="enable_target_profit_fee_sugg_v_final2",
     help="If checked, fee suggestion aims for Target Profit Margin. If unchecked, aims to cover NII & losses (breakeven)."
 )
 default_post_pct = 100 - default_pre_pct
@@ -205,18 +204,18 @@ def apportion_users(total_users_to_apportion, shares_dict):
     return final_allocations
 
 # === FORECASTING LOGIC ===
-def run_forecast(config_param_fc, scenario_debug_log): # Pass the debug log list
+def run_forecast(config_param_fc, scenario_debug_log):
     months_fc = 60
     initial_tam_fc = int(config_param_fc['total_market'] * config_param_fc['tam_pct'] / 100)
-    new_users_monthly_fc = [int(initial_tam_fc * (config_param_fc['start_pct'] / 100))]
+    new_users_monthly_fc = [int(initial_tam_fc * (config_param_fc['start_pct'] / 100))] # Month 1 new users
     
     rejoin_tracker_fc = {}
     forecast_data_fc, deposit_log_data_fc, default_log_data_fc, lifecycle_data_fc = [], [], [], []
     
     is_cap_enforced_in_config = config_param_fc.get("cap_tam", False)
-    TAM_used_cumulative_fc = 0 
+    TAM_used_cumulative_fc_for_cap_year = 0 # Tracks new users for capping within current TAM year
     if is_cap_enforced_in_config:
-        TAM_used_cumulative_fc = new_users_monthly_fc[0] 
+        TAM_used_cumulative_fc_for_cap_year = new_users_monthly_fc[0] 
     TAM_current_year_fc = initial_tam_fc 
 
     current_kibor_rate_fc = config_param_fc['kibor'] / 100
@@ -228,30 +227,35 @@ def run_forecast(config_param_fc, scenario_debug_log): # Pass the debug log list
     
     DEBUG_MODE = True 
     
-    # This will store the cumulative base for growth as per user's latest clarification
-    cumulative_onboarded_base_for_growth = 0
+    # For "cumulative base" logic: base grows by total onboarded users each month
+    # The acquisition % will be applied to this growing cumulative base.
+    cumulative_onboarded_users_total = 0 # Stores sum of all (new + rejoining) users to date
 
     for m_idx_fc in range(months_fc):
         current_month_num_fc = m_idx_fc + 1
         current_year_num_fc = m_idx_fc // 12 + 1
         
-        if m_idx_fc == 0:
+        # Determine current month's new users
+        if m_idx_fc == 0: # Month 1
             current_month_new_users_fc = new_users_monthly_fc[0]
-            cumulative_onboarded_base_for_growth = current_month_new_users_fc # Initialize with M1 new users
-        else:
-            # For M2 onwards, new users are calculated at the END of the previous loop iteration.
+            # The base for *next* month's (M2) new users will be M1's total onboarding.
+            # The "cumulative_onboarded_users_total" will be updated at the END of this iteration.
+        else: # Month 2 onwards
             current_month_new_users_fc = new_users_monthly_fc[m_idx_fc] if m_idx_fc < len(new_users_monthly_fc) else 0
         
         rejoining_users_this_month_fc = rejoin_tracker_fc.get(m_idx_fc, 0)
         total_onboarding_this_month_fc = current_month_new_users_fc + rejoining_users_this_month_fc
+        
+        # Update cumulative base AFTER current month's total onboarding is known
+        cumulative_onboarded_users_total += total_onboarding_this_month_fc
+
 
         if DEBUG_MODE and m_idx_fc < 24 :
             scenario_debug_log.append(f"--- Month {current_month_num_fc} (m_idx_fc: {m_idx_fc}) ---")
             scenario_debug_log.append(f"New Users This Month (from list): {current_month_new_users_fc}")
             scenario_debug_log.append(f"Rejoining Users This Month: {rejoining_users_this_month_fc}")
             scenario_debug_log.append(f"Total Onboarding This Month (for distribution): {total_onboarding_this_month_fc}")
-            if m_idx_fc > 0: # Base for M1 is just its own new users for calculating M2's new users
-                 scenario_debug_log.append(f"Cumulative Onboarded Base (End of M{current_month_num_fc-1}, for M{current_month_num_fc} new user calc): {cumulative_onboarded_base_for_growth}")
+            scenario_debug_log.append(f"Cumulative Onboarded Base (end of M{current_month_num_fc}): {cumulative_onboarded_users_total}")
 
 
         durations_for_this_year_fc_shares = yearly_duration_share.get(current_year_num_fc, {})
@@ -261,6 +265,7 @@ def run_forecast(config_param_fc, scenario_debug_log): # Pass the debug log list
             apportioned_users_by_duration = apportion_users(total_onboarding_this_month_fc, active_duration_shares)
             for dur_val_fc, users_for_this_duration_fc in apportioned_users_by_duration.items():
                 if users_for_this_duration_fc == 0: continue
+                # ... (rest of your existing cohort processing logic unchanged) ...
                 if dur_val_fc not in slab_map: continue
                 current_slab_shares_fc = {sl: sh for sl, sh in slab_map[dur_val_fc].items() if sh > 0}
                 if not current_slab_shares_fc: continue
@@ -268,7 +273,10 @@ def run_forecast(config_param_fc, scenario_debug_log): # Pass the debug log list
                 for installment_val_fc, users_for_this_slab_fc in apportioned_users_by_slab.items():
                     if users_for_this_slab_fc == 0: continue
                     if dur_val_fc not in slot_fees or dur_val_fc not in slot_distribution: continue
-                    current_slot_shares_fc = {s: p for s, p in slot_distribution[dur_val_fc].items() if s in slot_fees[dur_val_fc] and not slot_fees[dur_val_fc][s]['blocked'] and p > 0}
+                    current_slot_shares_fc = {
+                        s: p for s, p in slot_distribution[dur_val_fc].items()
+                        if s in slot_fees[dur_val_fc] and not slot_fees[dur_val_fc][s]['blocked'] and p > 0
+                    }
                     if not current_slot_shares_fc: continue
                     apportioned_users_by_slot = apportion_users(users_for_this_slab_fc, current_slot_shares_fc)
                     for slot_num_fc, users_in_this_specific_cohort_fc in apportioned_users_by_slot.items():
@@ -312,46 +320,39 @@ def run_forecast(config_param_fc, scenario_debug_log): # Pass the debug log list
                             rejoin_tracker_fc[rejoin_at_month_idx_fc] = rejoin_tracker_fc.get(rejoin_at_month_idx_fc, 0) + users_in_this_specific_cohort_fc
         else:
              if DEBUG_MODE and m_idx_fc < 24:
-                scenario_debug_log.append(f"Month {current_month_num_fc}: No users onboarded or no active durations to distribute to.")
+                scenario_debug_log.append(f"Month {current_month_num_fc}: No users onboarded this month OR no active durations to distribute to.")
 
-        # Update cumulative base for next month's new user calculation
-        if m_idx_fc > 0 : # For M2 onwards, the base is the cumulative sum up to *previous* month's new users
-             cumulative_onboarded_base_for_growth += current_month_new_users_fc # Add this month's NEW users
-        # For M1 (m_idx_fc = 0), cumulative_onboarded_base_for_growth was already set to M1's new users
-        # effectively making Total Onboarding of M1 (which is just M1 new users at that point) the base for M2's new users.
 
         # --- Calculate NEW USERS for the NEXT month (m_idx_fc + 1)---
         if m_idx_fc + 1 < months_fc:
-            # Logic based on user's example: M2_New = M1_Total_Onboarding * Rate; M3_New = M2_Total_Cumulative * Rate
-            # This requires a running cumulative total as the base after M1.
-
-            if m_idx_fc == 0: # For calculating M2's new users
-                growth_base = total_onboarding_this_month_fc # This is M1's Total Onboarding
-            else: # For calculating M3 onwards
-                growth_base = cumulative_onboarded_base_for_growth # This is sum of all new users up to current month m_idx_fc
-
+            # DEFINITIVE LOGIC based on user's M1, M2, M3 example:
+            # New Users [Month N+1] = Cumulative_Onboarded_Base_End_of_Month_N * (Acquisition_Rate / 100)
+            
+            growth_base_for_next_new_users = cumulative_onboarded_users_total # Use the updated cumulative total
+            
             acquisition_percentage = config_param_fc['monthly_growth'] / 100.0
             
-            next_month_new_users_value = growth_base * acquisition_percentage
+            next_month_new_users_value = growth_base_for_next_new_users * acquisition_percentage
             next_month_new_users_calculated = int(round(next_month_new_users_value))
 
             if DEBUG_MODE and m_idx_fc < 23:
                 scenario_debug_log.append(f"  Calculating New Users for Next Month (M{current_month_num_fc+1}):")
-                scenario_debug_log.append(f"    Base for New User Calc: {growth_base}")
+                scenario_debug_log.append(f"    Base for New User Calc (Cumulative Onboarded up to M{current_month_num_fc}): {growth_base_for_next_new_users}")
                 scenario_debug_log.append(f"    Acquisition Percentage: {acquisition_percentage*100:.2f}%")
                 scenario_debug_log.append(f"    New Users Value (float) for M{current_month_num_fc+1}: {next_month_new_users_value:.2f}")
                 scenario_debug_log.append(f"    New Users Calculated (rounded int) for M{current_month_num_fc+1}: {next_month_new_users_calculated}")
             
             if is_cap_enforced_in_config:
-                if (m_idx_fc + 1) % 12 == 0:
+                if (m_idx_fc + 1) % 12 == 0: 
                     TAM_current_year_fc = int(TAM_current_year_fc * (1 + config_param_fc['annual_growth'] / 100))
-                    TAM_used_cumulative_fc = 0
-                if (TAM_used_cumulative_fc + next_month_new_users_calculated) > TAM_current_year_fc :
-                    next_month_new_users_final = max(0, TAM_current_year_fc - TAM_used_cumulative_fc)
+                    TAM_used_cumulative_fc_for_cap_year = 0 
+                
+                if (TAM_used_cumulative_fc_for_cap_year + next_month_new_users_calculated) > TAM_current_year_fc :
+                    next_month_new_users_final = max(0, TAM_current_year_fc - TAM_used_cumulative_fc_for_cap_year)
                 else:
                     next_month_new_users_final = next_month_new_users_calculated
-                TAM_used_cumulative_fc += next_month_new_users_final
-            else:
+                TAM_used_cumulative_fc_for_cap_year += next_month_new_users_final 
+            else: 
                 next_month_new_users_final = next_month_new_users_calculated
             
             new_users_monthly_fc.append(next_month_new_users_final)
@@ -359,37 +360,8 @@ def run_forecast(config_param_fc, scenario_debug_log): # Pass the debug log list
             if DEBUG_MODE and m_idx_fc < 23:
                  scenario_debug_log.append(f"    New Users Appended for M{current_month_num_fc+1}: {next_month_new_users_final}")
                  if is_cap_enforced_in_config:
-                     scenario_debug_log.append(f"    TAM Used Cumulative: {TAM_used_cumulative_fc}, Current Year TAM: {TAM_current_year_fc}")
-        
-        # After processing the current month (m_idx_fc) and calculating next month's new users (m_idx_fc+1),
-        # Update the cumulative base FOR THE NEXT ITERATION's M_IDX_FC.
-        # The cumulative base should always be sum of NEW USERS up to the current m_idx_fc, 
-        # which will be used for calculating new users for m_idx_fc+2 based on total onboarding of m_idx_fc+1.
-        # This cumulative_onboarded_base_for_growth has to be updated carefully.
-        
-        # For next iteration: The cumulative base for calculating NewUsers[m_idx_fc+2] will be 
-        # sum of NewUsers[0]...NewUsers[m_idx_fc+1] if using your explicit step by step
-        # Or Sum of TotalOnboarding[0]...TotalOnboarding[m_idx_fc]
-        
-        # Let's strictly follow your example logic path as the primary interpretation now:
-        # M1_New = 20k
-        # M2_New = M1_TotalOnboarding * Rate  (M1_TotalOnboarding = M1_New as no rejoins)
-        #          -> So, growth_base for M2's calc was M1_TotalOnboarding.
-        # M3_New = CumulativeBase_EndOf_M1 (20k) + M2_NewUsers_JustCalculated (2k) => 22k * Rate
-        # No, this is where your text explanation deviates a little.
-        # Let's take the structure:
-        # NewUsers[n+1] = Base[n] * Rate
-        # Base[n] for NewUsers[n+1] calculation is TotalOnboardedSoFar[n]
-        
-        # Re-evaluating "cumulative_onboarded_base_for_growth":
-        # At the start of iteration m_idx_fc=0 (Month 1):
-        #   current_month_new_users_fc = 20000
-        #   cumulative_onboarded_base_for_growth = 20000 (this is used for calc of Month 2 new users)
-        # At the start of iteration m_idx_fc=1 (Month 2):
-        #   current_month_new_users_fc = 2000 (calc'd using base of 20000)
-        #   Now, for calculating Month 3's new users, the base should be "22000" according to your example.
-        #   "22000" = Month 1's Onboarding (20000) + Month 2's New Users (2000) -- (NOT Month 2's Total Onboarding)
-        # This seems like a cumulative sum of *actual users on platform started up to previous month*.
+                     scenario_debug_log.append(f"    TAM Used for Cap Year: {TAM_used_cumulative_fc_for_cap_year}, Current Year TAM: {TAM_current_year_fc}")
+
 
     df_forecast_fc = pd.DataFrame(forecast_data_fc).fillna(0)
     df_deposit_log_fc = pd.DataFrame(deposit_log_data_fc).fillna(0)
@@ -397,165 +369,70 @@ def run_forecast(config_param_fc, scenario_debug_log): # Pass the debug log list
     df_lifecycle_fc = pd.DataFrame(lifecycle_data_fc).fillna(0)
     return df_forecast_fc, df_deposit_log_fc, df_default_log_fc, df_lifecycle_fc
 
-# === EXPORT AND DISPLAY === (Copied from your provided file input_file_0.py)
+# === EXPORT AND DISPLAY ===
 output_excel_main = io.BytesIO()
 with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main:
-    if "debug_placeholder" not in st.session_state: # To control debug print area if needed
-        st.session_state.debug_placeholder = st.empty()
-
+    
     for scenario_idx_main, scenario_data_main in enumerate(scenarios):
-        if scenario_idx_main > 0 : # Try to clear placeholder for subsequent scenarios if st.write was used in placeholder
-            st.session_state.debug_placeholder.empty()
-        
         st.session_state.debug_log_output = [] # Clear/initialize log for this scenario
 
         current_config_main = scenario_data_main.copy()
         current_config_main.update({
             "kibor": kibor, "spread": spread, "rest_period": rest_period,
-            "default_rate": default_rate, # global default_rate
+            "default_rate": default_rate,
             "global_pre_payout_recovery_pct": global_pre_payout_recovery_pct
-            # "cap_tam" is already in scenario_data_main from the UI config
         })
         
         df_forecast_main, df_deposit_log_main, df_default_log_main, df_lifecycle_main = run_forecast(current_config_main, st.session_state.debug_log_output)
         
-        # Display debug logs in an expander for this scenario
         with st.expander(f"Debug Log for Scenario: {scenario_data_main['name']}", expanded=False):
             log_text = "\n".join(st.session_state.debug_log_output)
-            st.text_area("Log:", log_text, height=300)
-
+            st.text_area("Log:", value=log_text, height=300, key=f"debug_log_{scenario_idx_main}")
 
         st.header(f"Scenario: {scenario_data_main['name']}")
         st.subheader(f"📘 Raw Forecast Data (Cohorts by Joining Month)")
         if not df_forecast_main.empty:
-            # Apply formatting for display
             format_dict = {col: "{:,.0f}" for col in df_forecast_main.columns if df_forecast_main[col].dtype in ['int64', 'float64'] and col not in ['Month Joined', 'Year Joined', 'Duration', 'Assigned Slot']}
             if 'Pools Formed' in df_forecast_main.columns: format_dict["Pools Formed"] = "{:,.2f}" 
             if 'Fee % (on Total Commitment)' in df_forecast_main.columns: format_dict["Fee % (on Total Commitment)"] = "{:,.2f}"
-            
             existing_format_dict = {k: v for k, v in format_dict.items() if k in df_forecast_main.columns}
-            
             st.dataframe(df_forecast_main.style.format(existing_format_dict))
 
-            # --- Derive Monthly Summary ---
-            df_monthly_direct_main = df_forecast_main.groupby("Month Joined")[
-                ["Cash In (Installments This Month)", "NII Earned This Month (Avg)", "Pools Formed", "Users"]
-            ].sum().reset_index().rename(columns={"Month Joined": "Month", 
-                                                  "Users": "Users Joining This Month",
-                                                  "NII Earned This Month (Avg)": "NII This Month (Sum of Avg from New Cohorts)"})
-
-            df_payouts_actual_main = df_forecast_main.groupby("Payout Due Month")[
-                ["Payout Amount Scheduled", "Users"]
-            ].sum().reset_index().rename(columns={
-                "Payout Due Month": "Month", 
-                "Payout Amount Scheduled": "Actual Cash Out This Month",
-                "Users": "Payout Recipient Users"
-            })
-            
-            df_lifetime_values_main = df_forecast_main.groupby("Month Joined")[
-                ["Total Fee Collected (Lifetime)", "Total NII (Lifetime)", 
-                 "Total Default Loss (Lifetime)", "Expected Lifetime Profit",
-                 "External Capital For Loss (Lifetime)"]
-            ].sum().reset_index().rename(columns={"Month Joined": "Month"})
-
+            df_monthly_direct_main = df_forecast_main.groupby("Month Joined")[["Cash In (Installments This Month)", "NII Earned This Month (Avg)", "Pools Formed", "Users"]].sum().reset_index().rename(columns={"Month Joined": "Month", "Users": "Users Joining This Month", "NII Earned This Month (Avg)": "NII This Month (Sum of Avg from New Cohorts)"})
+            df_payouts_actual_main = df_forecast_main.groupby("Payout Due Month")[["Payout Amount Scheduled", "Users"]].sum().reset_index().rename(columns={"Payout Due Month": "Month", "Payout Amount Scheduled": "Actual Cash Out This Month", "Users": "Payout Recipient Users"})
+            df_lifetime_values_main = df_forecast_main.groupby("Month Joined")[["Total Fee Collected (Lifetime)", "Total NII (Lifetime)", "Total Default Loss (Lifetime)", "Expected Lifetime Profit", "External Capital For Loss (Lifetime)"]].sum().reset_index().rename(columns={"Month Joined": "Month"})
             df_monthly_summary_main = pd.DataFrame({"Month": range(1, 61)})
-            df_monthly_summary_main = df_monthly_summary_main.merge(df_monthly_direct_main, on="Month", how="left")
-            df_monthly_summary_main = df_monthly_summary_main.merge(df_payouts_actual_main, on="Month", how="left")
-            df_monthly_summary_main = df_monthly_summary_main.merge(df_lifetime_values_main, on="Month", how="left")
-            df_monthly_summary_main = df_monthly_summary_main.fillna(0)
-
+            df_monthly_summary_main = df_monthly_summary_main.merge(df_monthly_direct_main, on="Month", how="left").merge(df_payouts_actual_main, on="Month", how="left").merge(df_lifetime_values_main, on="Month", how="left").fillna(0)
             df_monthly_summary_main["Net Cash Flow This Month"] = df_monthly_summary_main["Cash In (Installments This Month)"] - df_monthly_summary_main["Actual Cash Out This Month"]
-            df_monthly_summary_main["Gross Profit This Month (Accrued from New Cohorts)"] = df_monthly_summary_main["Total Fee Collected (Lifetime)"] + \
-                                                                    df_monthly_summary_main["Total NII (Lifetime)"] - \
-                                                                    df_monthly_summary_main["Total Default Loss (Lifetime)"]
-            
+            df_monthly_summary_main["Gross Profit This Month (Accrued from New Cohorts)"] = df_monthly_summary_main["Total Fee Collected (Lifetime)"] + df_monthly_summary_main["Total NII (Lifetime)"] - df_monthly_summary_main["Total Default Loss (Lifetime)"]
             st.subheader(f"📊 Monthly Summary for {scenario_data_main['name']}")
-            cols_to_display_monthly_main = [
-                "Month", "Users Joining This Month", "Pools Formed", 
-                "Cash In (Installments This Month)", "Actual Cash Out This Month", "Net Cash Flow This Month",
-                "NII This Month (Sum of Avg from New Cohorts)", 
-                "Total NII (Lifetime)", 
-                "Payout Recipient Users",
-                "Total Fee Collected (Lifetime)", "Total Default Loss (Lifetime)",
-                "Gross Profit This Month (Accrued from New Cohorts)", "External Capital For Loss (Lifetime)"
-            ]
+            cols_to_display_monthly_main = ["Month", "Users Joining This Month", "Pools Formed", "Cash In (Installments This Month)", "Actual Cash Out This Month", "Net Cash Flow This Month", "NII This Month (Sum of Avg from New Cohorts)", "Total NII (Lifetime)", "Payout Recipient Users", "Total Fee Collected (Lifetime)", "Total Default Loss (Lifetime)", "Gross Profit This Month (Accrued from New Cohorts)", "External Capital For Loss (Lifetime)"]
             st.dataframe(df_monthly_summary_main[cols_to_display_monthly_main].style.format(precision=0, thousands=","))
-
-            # --- Derive Yearly Summary ---
             df_monthly_summary_main["Year"] = ((df_monthly_summary_main["Month"] - 1) // 12) + 1
-            df_yearly_summary_main = df_monthly_summary_main.groupby("Year")[
-                ["Users Joining This Month", "Pools Formed", "Cash In (Installments This Month)", 
-                 "Actual Cash Out This Month", "Net Cash Flow This Month", 
-                 "NII This Month (Sum of Avg from New Cohorts)", "Total NII (Lifetime)",
-                 "Payout Recipient Users", "Total Fee Collected (Lifetime)", 
-                 "Total Default Loss (Lifetime)", "Gross Profit This Month (Accrued from New Cohorts)", 
-                 "External Capital For Loss (Lifetime)"]
-            ].sum().reset_index()
-            
-            yearly_rename_map = {
-                "Users Joining This Month": "Annual Users Joining",
-                "Pools Formed": "Annual Pools Formed",
-                "Cash In (Installments This Month)": "Annual Cash In (Installments)",
-                "Actual Cash Out This Month": "Annual Actual Cash Out",
-                "Net Cash Flow This Month": "Annual Net Cash Flow",
-                "NII This Month (Sum of Avg from New Cohorts)": "Annual NII (Sum of Avg from New Cohorts)",
-                "Total NII (Lifetime)": "Annual Total NII (Lifetime from New Cohorts)",
-                "Payout Recipient Users": "Annual Payout Recipient Users",
-                "Total Fee Collected (Lifetime)": "Annual Total Fee Collected (Lifetime from New Cohorts)",
-                "Total Default Loss (Lifetime)": "Annual Total Default Loss (Lifetime from New Cohorts)",
-                "Gross Profit This Month (Accrued from New Cohorts)": "Annual Gross Profit (Accrued from New Cohorts)",
-                "External Capital For Loss (Lifetime)": "Annual External Capital For Loss (Lifetime from New Cohorts)"
-            }
+            df_yearly_summary_main = df_monthly_summary_main.groupby("Year")[["Users Joining This Month", "Pools Formed", "Cash In (Installments This Month)", "Actual Cash Out This Month", "Net Cash Flow This Month", "NII This Month (Sum of Avg from New Cohorts)", "Total NII (Lifetime)", "Payout Recipient Users", "Total Fee Collected (Lifetime)", "Total Default Loss (Lifetime)", "Gross Profit This Month (Accrued from New Cohorts)", "External Capital For Loss (Lifetime)"]].sum().reset_index()
+            yearly_rename_map = {"Users Joining This Month": "Annual Users Joining", "Pools Formed": "Annual Pools Formed", "Cash In (Installments This Month)": "Annual Cash In (Installments)", "Actual Cash Out This Month": "Annual Actual Cash Out", "Net Cash Flow This Month": "Annual Net Cash Flow", "NII This Month (Sum of Avg from New Cohorts)": "Annual NII (Sum of Avg from New Cohorts)", "Total NII (Lifetime)": "Annual Total NII (Lifetime from New Cohorts)", "Payout Recipient Users": "Annual Payout Recipient Users", "Total Fee Collected (Lifetime)": "Annual Total Fee Collected (Lifetime from New Cohorts)", "Total Default Loss (Lifetime)": "Annual Total Default Loss (Lifetime from New Cohorts)", "Gross Profit This Month (Accrued from New Cohorts)": "Annual Gross Profit (Accrued from New Cohorts)", "External Capital For Loss (Lifetime)": "Annual External Capital For Loss (Lifetime from New Cohorts)"}
             df_yearly_summary_main.rename(columns=yearly_rename_map, inplace=True)
-
-            # --- Profit Share Summary ---
-            df_profit_share_main = pd.DataFrame({
-                "Year": df_yearly_summary_main["Year"],
-                "External Capital Needed (Annual Accrual)": df_yearly_summary_main["Annual External Capital For Loss (Lifetime from New Cohorts)"],
-                "Annual Cash In (Installments)": df_yearly_summary_main["Annual Cash In (Installments)"],
-                "Annual NII (Accrued Lifetime)": df_yearly_summary_main["Annual Total NII (Lifetime from New Cohorts)"], 
-                "Annual Default Loss (Accrued)": df_yearly_summary_main["Annual Total Default Loss (Lifetime from New Cohorts)"],
-                "Annual Fee Collected (Accrued)": df_yearly_summary_main["Annual Total Fee Collected (Lifetime from New Cohorts)"],
-                "Annual Gross Profit (Accrued)": df_yearly_summary_main["Annual Gross Profit (Accrued from New Cohorts)"],
-                "Part-A Profit Share": df_yearly_summary_main["Annual Gross Profit (Accrued from New Cohorts)"] * party_a_pct,
-                "Part-B Profit Share": df_yearly_summary_main["Annual Gross Profit (Accrued from New Cohorts)"] * party_b_pct
-            })
+            df_profit_share_main = pd.DataFrame({"Year": df_yearly_summary_main["Year"], "External Capital Needed (Annual Accrual)": df_yearly_summary_main["Annual External Capital For Loss (Lifetime from New Cohorts)"], "Annual Cash In (Installments)": df_yearly_summary_main["Annual Cash In (Installments)"], "Annual NII (Accrued Lifetime)": df_yearly_summary_main["Annual Total NII (Lifetime from New Cohorts)"], "Annual Default Loss (Accrued)": df_yearly_summary_main["Annual Total Default Loss (Lifetime from New Cohorts)"], "Annual Fee Collected (Accrued)": df_yearly_summary_main["Annual Total Fee Collected (Lifetime from New Cohorts)"], "Annual Gross Profit (Accrued)": df_yearly_summary_main["Annual Gross Profit (Accrued from New Cohorts)"], "Part-A Profit Share": df_yearly_summary_main["Annual Gross Profit (Accrued from New Cohorts)"] * party_a_pct, "Part-B Profit Share": df_yearly_summary_main["Annual Gross Profit (Accrued from New Cohorts)"] * party_b_pct})
             df_profit_share_main["% Loss Covered by External Capital"] = 0
-            if not df_yearly_summary_main.empty and \
-               "Annual Total Default Loss (Lifetime from New Cohorts)" in df_yearly_summary_main.columns and \
-               df_yearly_summary_main["Annual Total Default Loss (Lifetime from New Cohorts)"].gt(0).any():
-                
+            if not df_yearly_summary_main.empty and "Annual Total Default Loss (Lifetime from New Cohorts)" in df_yearly_summary_main.columns and df_yearly_summary_main["Annual Total Default Loss (Lifetime from New Cohorts)"].gt(0).any():
                 mask_main = df_yearly_summary_main["Annual Total Default Loss (Lifetime from New Cohorts)"] > 0
                 if "Annual External Capital For Loss (Lifetime from New Cohorts)" in df_yearly_summary_main.columns:
-                    df_profit_share_main.loc[mask_main, "% Loss Covered by External Capital"] = \
-                        (df_yearly_summary_main.loc[mask_main, "Annual External Capital For Loss (Lifetime from New Cohorts)"] / \
-                         df_yearly_summary_main.loc[mask_main, "Annual Total Default Loss (Lifetime from New Cohorts)"]) * 100
-            
+                    df_profit_share_main.loc[mask_main, "% Loss Covered by External Capital"] = (df_yearly_summary_main.loc[mask_main, "Annual External Capital For Loss (Lifetime from New Cohorts)"] / df_yearly_summary_main.loc[mask_main, "Annual Total Default Loss (Lifetime from New Cohorts)"]) * 100
             df_profit_share_main.fillna(0, inplace=True)
-
             st.subheader(f"💰 Profit Share Summary for {scenario_data_main['name']}")
             st.dataframe(df_profit_share_main.style.format(precision=0, thousands=","))
             st.subheader(f"📆 Yearly Summary for {scenario_data_main['name']}")
             st.dataframe(df_yearly_summary_main.style.format(precision=0, thousands=","))
-        else: 
+        else:
             st.warning(f"No forecast data generated for {scenario_data_main['name']}. Summary tables will be empty.")
-            df_monthly_summary_main = pd.DataFrame(columns=["Month"])
-            df_yearly_summary_main = pd.DataFrame(columns=["Year"])
-            df_profit_share_main = pd.DataFrame(columns=["Year"])
+            df_monthly_summary_main = pd.DataFrame(columns=["Month"]); df_yearly_summary_main = pd.DataFrame(columns=["Year"]); df_profit_share_main = pd.DataFrame(columns=["Year"])
 
-        # === 📊 VISUAL CHARTS ===
         st.subheader(f"Visual Charts for {scenario_data_main['name']}")
-        df_monthly_chart_data_main = df_monthly_summary_main.copy()
-        df_yearly_chart_data_main = df_yearly_summary_main.copy()
-        if "Year" in df_yearly_chart_data_main.columns and not df_yearly_chart_data_main.empty:
-            df_yearly_chart_data_main["Year"] = df_yearly_chart_data_main["Year"].astype(str)
+        df_monthly_chart_data_main = df_monthly_summary_main.copy(); df_yearly_chart_data_main = df_yearly_summary_main.copy()
+        if "Year" in df_yearly_chart_data_main.columns and not df_yearly_chart_data_main.empty: df_yearly_chart_data_main["Year"] = df_yearly_chart_data_main["Year"].astype(str)
         df_profit_share_chart_data_main = df_profit_share_main.copy()
-        if "Year" in df_profit_share_chart_data_main.columns and not df_profit_share_chart_data_main.empty:
-            df_profit_share_chart_data_main["Year"] = df_profit_share_chart_data_main["Year"].astype(str)
-
+        if "Year" in df_profit_share_chart_data_main.columns and not df_profit_share_chart_data_main.empty: df_profit_share_chart_data_main["Year"] = df_profit_share_chart_data_main["Year"].astype(str)
         FIG_SIZE_MAIN = (10, 4.5)
-
-        st.markdown("##### Chart 1: Monthly Pools Formed vs. Cash In (Installments)")
         chart_cols_m1_main = ["Month", "Pools Formed", "Cash In (Installments This Month)"]
         if not df_monthly_chart_data_main.empty and all(col in df_monthly_chart_data_main.columns for col in chart_cols_m1_main) and df_monthly_chart_data_main["Month"].notna().any():
             fig1_main, ax1_main = plt.subplots(figsize=FIG_SIZE_MAIN); ax2_main = ax1_main.twinx()
@@ -567,8 +444,6 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             handles_main = [bars1_main, line1_main]; labels_main = [h.get_label() for h in handles_main]; fig1_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2)
             fig1_main.tight_layout(rect=[0, 0.05, 1, 1]); st.pyplot(fig1_main)
         else: st.caption("Not enough data for Chart 1.")
-        
-        st.markdown("##### Chart 2: Monthly Users Joining vs. Accrued Gross Profit (from New Cohorts)")
         chart_cols_m2_main = ["Month", "Users Joining This Month", "Gross Profit This Month (Accrued from New Cohorts)"]
         if not df_monthly_chart_data_main.empty and all(col in df_monthly_chart_data_main.columns for col in chart_cols_m2_main) and df_monthly_chart_data_main["Month"].notna().any():
             fig2_main, ax3_main = plt.subplots(figsize=FIG_SIZE_MAIN); ax4_main = ax3_main.twinx()
@@ -580,8 +455,6 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             handles_main = [bars2_main, line2_main]; labels_main = [h.get_label() for h in handles_main]; fig2_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2)
             fig2_main.tight_layout(rect=[0, 0.05, 1, 1]); st.pyplot(fig2_main)
         else: st.caption("Not enough data for Chart 2.")
-
-        st.markdown("##### Chart 3: Annual Pools Formed vs. Annual Cash In (Installments)")
         chart_cols_y1_main = ["Year", "Annual Pools Formed", "Annual Cash In (Installments)"]
         if not df_yearly_chart_data_main.empty and all(col in df_yearly_chart_data_main.columns for col in chart_cols_y1_main) and df_yearly_chart_data_main["Year"].notna().any():
             fig3_main, ax5_main = plt.subplots(figsize=FIG_SIZE_MAIN); ax6_main = ax5_main.twinx()
@@ -593,8 +466,6 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             handles_main = [bars3_main, line3_main]; labels_main = [h.get_label() for h in handles_main]; fig3_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2)
             fig3_main.tight_layout(rect=[0, 0.05, 1, 1]); st.pyplot(fig3_main)
         else: st.caption("Not enough data for Chart 3.")
-
-        st.markdown("##### Chart 4: Annual Users Joining vs. Annual Accrued Gross Profit (from New Cohorts)")
         chart_cols_y2_main = ["Year", "Annual Users Joining", "Annual Gross Profit (Accrued from New Cohorts)"]
         if not df_yearly_chart_data_main.empty and all(col in df_yearly_chart_data_main.columns for col in chart_cols_y2_main) and df_yearly_chart_data_main["Year"].notna().any():
             fig4_main, ax7_main = plt.subplots(figsize=FIG_SIZE_MAIN); ax8_main = ax7_main.twinx()
@@ -606,8 +477,6 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             handles_main = [bars4_main, line4_main]; labels_main = [h.get_label() for h in handles_main]; fig4_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2)
             fig4_main.tight_layout(rect=[0, 0.05, 1, 1]); st.pyplot(fig4_main)
         else: st.caption("Not enough data for Chart 4.")
-
-        st.markdown("##### Chart 5: Annual External Capital vs. Fee & Accrued Profit")
         chart_cols_y3_main = ["Year", "External Capital Needed (Annual Accrual)", "Annual Fee Collected (Accrued)", "Annual Gross Profit (Accrued)"]
         if not df_profit_share_chart_data_main.empty and all(col in df_profit_share_chart_data_main.columns for col in chart_cols_y3_main) and df_profit_share_chart_data_main["Year"].notna().any():
             fig5_main, ax9_main = plt.subplots(figsize=FIG_SIZE_MAIN); ax10_main = ax9_main.twinx()
