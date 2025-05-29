@@ -634,4 +634,4 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
 
 output_excel_main.seek(0)
 st.sidebar.download_button("📥 Download All Scenarios Excel", data=output_excel_main, file_name="all_scenarios_rosca_forecast.xlsx")
---- END OF FILE rosca_forecast_app_v14 (8).py ---
+
