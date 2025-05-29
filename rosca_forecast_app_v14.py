@@ -75,8 +75,8 @@ global_payout_day = st.sidebar.number_input("Payout Day of Month", min_value=1, 
 profit_split = st.sidebar.number_input("Profit Share for Party A (%)", min_value=0, max_value=100, value=50)
 party_a_pct = profit_split / 100
 party_b_pct = 1 - party_a_pct
-kibor = st.sidebar.number_input("KIBOR (%)", value=11.0)
-spread = st.sidebar.number_input("Spread (%)", value=5.0)
+kibor = st.sidebar.number_input("KIBOR (%)", value=11.0, step=0.1)
+spread = st.sidebar.number_input("Spread (%)", value=5.0, step=0.1)
 rest_period = st.sidebar.number_input("Rest Period (months)", value=1, min_value=0)
 default_rate = st.sidebar.number_input("Default Rate (%)", value=1.0, min_value=0.0, max_value=100.0, step=0.1)
 default_pre_pct = st.sidebar.number_input("Pre-Payout Default %", min_value=0, max_value=100, value=50)
@@ -86,79 +86,97 @@ penalty_pct = st.sidebar.number_input("Pre-Payout Refund (%)", value=10.0, min_v
 # === DURATION/SLAB/SLOT CONFIGURATION ===
 validation_messages = []
 durations_input = st.multiselect("Select Durations (months)", [3, 4, 5, 6, 8, 10], default=[3, 4, 6])
-durations = [int(d) for d in durations_input] 
+durations = sorted([int(d) for d in durations_input])
+
 yearly_duration_share = {}
 slab_map = {}
 slot_fees = {}
 slot_distribution = {}
-first_year_defaults = {}
+first_year_defaults_duration_share = {} 
 
 for y_config in range(1, 6):
     with st.expander(f"Year {y_config} Duration Share"):
-        yearly_duration_share[y_config] = {}
-        total_dur_share_config = 0
-        num_durations_selected = len(durations) if len(durations) > 0 else 1
-        default_share_val_dur = 100 // num_durations_selected if y_config == 1 else 0
+        yearly_duration_share[y_config] = yearly_duration_share.get(y_config, {})
         
+        if not durations:
+            st.caption(f"No durations selected. Please select durations to configure shares for Year {y_config}.")
+            yearly_duration_share[y_config] = {}
+            continue
+
+        num_selected_durations = len(durations)
+        default_share_val = 100 // num_selected_durations if num_selected_durations > 0 else 0
+        temp_year_shares = {}
+        current_year_total_share = 0
+
         for idx, d_config in enumerate(durations):
             key_config = f"yds_{y_config}_{d_config}"
-            current_default = default_share_val_dur
-            # Adjust last item to make sum 100 for Y1 defaults if possible
-            if y_config == 1 and idx == num_durations_selected -1:
-                current_default = 100 - (default_share_val_dur * (num_durations_selected -1))
-
+            
             if y_config == 1:
-                val_config = st.number_input(f"{d_config}M – Year {y_config} (%)", min_value=0, max_value=100, value=current_default, step=1, key=key_config)
-                first_year_defaults[d_config] = val_config
+                current_input_default = default_share_val
+                if idx == num_selected_durations - 1 and num_selected_durations > 0:
+                    current_input_default = 100 - (default_share_val * (num_selected_durations - 1))
+                if num_selected_durations == 1: current_input_default = 100
             else:
-                val_config = st.number_input(f"{d_config}M – Year {y_config} (%)", min_value=0, max_value=100, value=first_year_defaults.get(d_config, 0), step=1, key=key_config)
-            yearly_duration_share[y_config][d_config] = val_config
-            total_dur_share_config += val_config
-        if abs(total_dur_share_config - 100) > 0.1 and sum(yearly_duration_share[y_config].values()) > 0 : # Allow some float precision issue if sum is not 0
-             validation_messages.append(f"⚠️ Year {y_config} duration share total is {total_dur_share_config}%. It should be 100% if durations are used.")
+                current_input_default = first_year_defaults_duration_share.get(d_config, 0) 
 
+            val_config = st.number_input(
+                f"{d_config}M – Year {y_config} (%)", 
+                min_value=0, max_value=100, 
+                value=int(current_input_default), 
+                step=1, key=key_config
+            )
+            temp_year_shares[d_config] = val_config
+            current_year_total_share += val_config
+            if y_config == 1:
+                first_year_defaults_duration_share[d_config] = val_config
+        
+        yearly_duration_share[y_config] = temp_year_shares
+        if current_year_total_share > 0 and abs(current_year_total_share - 100) > 0.1:
+             validation_messages.append(f"⚠️ Year {y_config} duration share total is {current_year_total_share}%. It should be 100%.")
 
 slab_options = [1000, 2000, 5000, 10000, 15000, 20000, 25000, 50000]
-num_slab_options = len(slab_options) if len(slab_options) > 0 else 1
-default_slab_val_dist = 100 // num_slab_options
+num_slab_options = len(slab_options)
+default_slab_dist_val = 100 // num_slab_options if num_slab_options > 0 else 0
 
 for d_config in durations:
     with st.expander(f"{d_config}M Slab Distribution"):
-        slab_map[d_config] = {}
-        total_slab_pct_config = 0
+        slab_map[d_config] = slab_map.get(d_config, {})
+        temp_slab_shares = {}
+        current_slab_total_share = 0
         for idx, slab_amount_config in enumerate(slab_options):
             key_config = f"slab_{d_config}_{slab_amount_config}"
-            current_slab_default = default_slab_val_dist
-            if idx == num_slab_options -1:
-                current_slab_default = 100 - (default_slab_val_dist * (num_slab_options -1))
-
-            val_config = st.number_input(f"Slab {slab_amount_config} – {d_config}M (%)", min_value=0, max_value=100, value=current_slab_default, step=1, key=key_config)
-            slab_map[d_config][slab_amount_config] = val_config
-            total_slab_pct_config += val_config
-        if abs(total_slab_pct_config - 100) > 0.1 and sum(slab_map[d_config].values()) > 0:
-            validation_messages.append(f"⚠️ Slab distribution for {d_config}M totals {total_slab_pct_config}%. It should be 100% if slabs are used.")
-
+            current_slab_default = default_slab_dist_val
+            if idx == num_slab_options - 1 and num_slab_options > 0:
+                current_slab_default = 100 - (default_slab_dist_val * (num_slab_options - 1))
+            if num_slab_options == 1: current_slab_default = 100
+            
+            val_config = st.number_input(f"Slab {slab_amount_config} – {d_config}M (%)", min_value=0, max_value=100, value=int(current_slab_default), step=1, key=key_config)
+            temp_slab_shares[slab_amount_config] = val_config
+            current_slab_total_share += val_config
+        
+        slab_map[d_config] = temp_slab_shares
+        if current_slab_total_share > 0 and abs(current_slab_total_share - 100) > 0.1:
+            validation_messages.append(f"⚠️ Slab distribution for {d_config}M totals {current_slab_total_share}%. It should be 100%.")
 
     with st.expander(f"{d_config}M Slot Fees & Blocking"):
-        if d_config not in slot_fees: slot_fees[d_config] = {}
-        if d_config not in slot_distribution: slot_distribution[d_config] = {}
+        slot_fees[d_config] = slot_fees.get(d_config, {})
+        slot_distribution[d_config] = slot_distribution.get(d_config, {})
         
-        num_slots = d_config if d_config > 0 else 1
-        default_slot_dist_val_s = 100 // num_slots
-
-        for s_config in range(1, d_config + 1):
-            example_slab_sugg = 1000 # This could be dynamic based on selected slabs
+        num_slots_for_duration = d_config
+        default_slot_share_val = 100 // num_slots_for_duration if num_slots_for_duration > 0 else 0
+        temp_slot_dist = {}
+        
+        for s_config in range(1, num_slots_for_duration + 1):
+            example_slab_sugg = 1000 
             total_commit_sugg = d_config * example_slab_sugg
-            # Simplified NII for suggestion
-            avg_holding_periods_months = sum(range(1, d_config + 1)) / d_config 
+            avg_holding_periods_months = sum(range(1, d_config + 1)) / d_config if d_config > 0 else 0
             avg_nii_sugg = total_commit_sugg * ((kibor + spread) / 100 / 12) * avg_holding_periods_months
-
             pre_def_loss_sugg = total_commit_sugg * (default_rate/100) * (default_pre_pct / 100) * (1 - penalty_pct / 100)
             post_def_loss_sugg = total_commit_sugg * (default_rate/100) * (default_post_pct / 100)
             avg_loss_sugg = (pre_def_loss_sugg + post_def_loss_sugg)
             suggested_fee_pct_val = 0
             if total_commit_sugg > 0:
-                 suggested_fee_pct_val = ((avg_nii_sugg + avg_loss_sugg) / total_commit_sugg) * 100 # This is total NII + Loss as % of commitment
+                 suggested_fee_pct_val = ((avg_nii_sugg + avg_loss_sugg) / total_commit_sugg) * 100
             
             key_fee_config = f"fee_{d_config}_{s_config}"
             key_block_config = f"block_{d_config}_{s_config}"
@@ -167,22 +185,30 @@ for d_config in durations:
             fee_input_val = st.number_input(f"Slot {s_config} Fee % (on total commitment)", 0.0, 100.0, max(0.1, round(suggested_fee_pct_val,1)), step=0.1, key=key_fee_config, help=f"Suggested to cover avg NII & Loss ≥ {suggested_fee_pct_val:.2f}%")
             blocked_input_val = st.checkbox(f"Block Slot {s_config}", key=key_block_config)
             
-            current_slot_default = default_slot_dist_val_s
-            if s_config == num_slots: # last slot
-                current_slot_default = 100 - (default_slot_dist_val_s * (num_slots -1))
+            current_slot_dist_default = default_slot_share_val
+            if s_config == num_slots_for_duration and num_slots_for_duration > 0:
+                current_slot_dist_default = 100 - (default_slot_share_val * (num_slots_for_duration - 1))
+            if num_slots_for_duration == 1: current_slot_dist_default = 100
 
-            slot_pct_input_val = st.number_input(label=f"Slot {s_config} % of Users (Duration {d_config}M)", min_value=0, max_value=100, value=current_slot_default, step=1, key=key_pct_config)
+            slot_pct_input_val = st.number_input(label=f"Slot {s_config} % of Users (Duration {d_config}M)", min_value=0, max_value=100, value=int(current_slot_dist_default), step=1, key=key_pct_config)
+            
             slot_fees[d_config][s_config] = {"fee": fee_input_val, "blocked": blocked_input_val}
-            slot_distribution[d_config][s_config] = slot_pct_input_val
-
-for d_config in durations:
-    total_slot_dist_pct = sum(v for k,v in slot_distribution[d_config].items() if not slot_fees[d_config][k]['blocked']) # Sum only unblocked slots
-    if abs(total_slot_dist_pct - 100) > 0.1 and sum(slot_distribution[d_config].values()) > 0 : # If any distribution, should be 100% for unblocked
-        validation_messages.append(f"⚠️ Slot distribution for unblocked slots in {d_config}M totals {total_slot_dist_pct}%. It should be 100%.")
+            temp_slot_dist[s_config] = slot_pct_input_val
+        
+        slot_distribution[d_config] = temp_slot_dist
+        total_slot_dist_pct_unblocked = sum(v for k,v in temp_slot_dist.items() if not slot_fees[d_config].get(k, {}).get('blocked', False) ) # Safer get
+        
+        if sum(temp_slot_dist.values()) > 0 and abs(total_slot_dist_pct_unblocked - 100) > 0.1: # Check if any unblocked slots have distribution
+            any_unblocked_has_share = any(v > 0 for k,v in temp_slot_dist.items() if not slot_fees[d_config].get(k, {}).get('blocked', False))
+            if any_unblocked_has_share: # Only validate if there are unblocked slots with shares
+                validation_messages.append(f"⚠️ Slot distribution for unblocked slots in {d_config}M totals {total_slot_dist_pct_unblocked}%. It should be 100%.")
 
 if validation_messages:
-    for msg_val in validation_messages: st.warning(msg_val)
-    st.stop()
+    for msg_val in validation_messages: 
+        st.warning(msg_val)
+    if any("must not exceed 100%" in msg or "should be 100%" in msg for msg in validation_messages): # Critical validation
+        st.stop()
+
 
 # === FORECASTING LOGIC ===
 def run_forecast(config_param_fc):
@@ -230,9 +256,6 @@ def run_forecast(config_param_fc):
             if cumulative_acquired_base_fc > 0 and acquisition_rate_fc > 0:
                 potential_float_users = cumulative_acquired_base_fc * acquisition_rate_fc
                 potential_new_acquisitions_this_month_fc = math.ceil(potential_float_users)
-            else:
-                potential_new_acquisitions_this_month_fc = 0 
-        
         if potential_new_acquisitions_this_month_fc < 0 : potential_new_acquisitions_this_month_fc = 0
 
         actual_new_acquisitions_this_month_fc = potential_new_acquisitions_this_month_fc
@@ -249,65 +272,88 @@ def run_forecast(config_param_fc):
         rejoining_users_this_month_fc_val = rejoin_tracker_fc.get(m_idx_fc, 0) 
         total_onboarding_this_month_fc = newly_acquired_this_month_fc_val + rejoining_users_this_month_fc_val
         temp_rejoining_users_for_allocation = rejoining_users_this_month_fc_val
+        
+        # Get the duration shares for the current year, default to empty dict if not found
+        durations_for_this_year_fc = yearly_duration_share.get(current_year_num_fc, {})
 
-        # --- Start Cohort Distribution ---
-        # Ensure that if total_onboarding_this_month_fc is 0, we skip cohort creation
-        if total_onboarding_this_month_fc == 0:
-            lifecycle_data_fc.append({"Month": current_month_num_fc, 
-                                    "New Users Acquired for Cohort": 0, # No new users as total onboarding is 0
-                                    "Rejoining Users for Cohort": 0, # No rejoining users as total onboarding is 0
-                                    "Total Onboarding to Cohort": 0})
-            # Log 0 for deposit and default logs if nothing happens this month
-            deposit_log_data_fc.append({"Month": current_month_num_fc, "Users Joining": 0, 
-                                      "Installments Collected": 0, 
-                                      "NII This Month (Avg)": 0})
-            default_log_data_fc.append({"Month": current_month_num_fc, "Year": current_year_num_fc, 
-                                      "Pre-Payout Defaulters (Cohort)": 0,
-                                      "Post-Payout Defaulters (Cohort)": 0,
-                                      "Default Loss (Cohort Lifetime)": 0})
-            continue # Skip to next month if no users to onboard
+        if total_onboarding_this_month_fc == 0 or not durations_for_this_year_fc:
+            lifecycle_data_fc.append({"Month": current_month_num_fc, "New Users Acquired for Cohort": 0, "Rejoining Users for Cohort": 0, "Total Onboarding to Cohort": 0})
+            deposit_log_data_fc.append({"Month": current_month_num_fc, "Users Joining": 0, "Installments Collected": 0, "NII This Month (Avg)": 0})
+            default_log_data_fc.append({"Month": current_month_num_fc, "Year": current_year_num_fc, "Pre-Payout Defaulters (Cohort)": 0, "Post-Payout Defaulters (Cohort)": 0, "Default Loss (Cohort Lifetime)": 0})
+            continue
 
+        # --- User distribution logic with rounding error management ---
+        # This ensures that the sum of users distributed across cohorts equals total_onboarding_this_month_fc
+        remaining_users_to_distribute = total_onboarding_this_month_fc
+        num_dur_configs = len(durations_for_this_year_fc)
+        
+        # Create a list of (duration, share_pct) to sort/process if needed, or iterate directly
+        sorted_dur_shares = sorted(durations_for_this_year_fc.items(), key=lambda item: item[1], reverse=True) # Example: process larger shares first
 
-        for dur_val_fc, dur_share_pct_fc in durations_for_this_year_fc.items():
-            if dur_share_pct_fc == 0: continue # Skip if no share for this duration
+        for idx_dur, (dur_val_fc, dur_share_pct_fc) in enumerate(sorted_dur_shares):
+            if dur_share_pct_fc == 0 or remaining_users_to_distribute == 0: continue
             
-            # Calculate users for this duration, ensuring it's an integer (ceil to be safe)
-            # and it doesn't exceed the remaining total_onboarding_this_month_fc
-            # This part requires careful handling if sum of percentages is not exactly 100
-            # For now, assuming percentages are managed to sum to 100 for active durations
-            users_for_this_duration_fc = math.ceil(total_onboarding_this_month_fc * (dur_share_pct_fc / 100))
+            # Allocate users for this duration
+            if idx_dur == num_dur_configs - 1: # Last duration config
+                users_for_this_duration_fc = remaining_users_to_distribute
+            else:
+                users_for_this_duration_fc = math.ceil(total_onboarding_this_month_fc * (dur_share_pct_fc / 100.0))
+                users_for_this_duration_fc = min(users_for_this_duration_fc, remaining_users_to_distribute)
+            
             if users_for_this_duration_fc == 0: continue
+            current_duration_distributed_users = users_for_this_duration_fc # Keep track for this duration's slabs
+            
+            # Slabs for this duration
+            slabs_for_this_duration = slab_map.get(dur_val_fc, {})
+            if not slabs_for_this_duration: continue
+            
+            num_slab_configs = len(slabs_for_this_duration)
+            sorted_slab_shares = sorted(slabs_for_this_duration.items(), key=lambda item: item[1], reverse=True)
 
-            for installment_val_fc, slab_share_pct_fc in slab_map[dur_val_fc].items():
-                if slab_share_pct_fc == 0: continue
-                users_for_this_slab_fc = math.ceil(users_for_this_duration_fc * (slab_share_pct_fc / 100))
+            for idx_slab, (installment_val_fc, slab_share_pct_fc) in enumerate(sorted_slab_shares):
+                if slab_share_pct_fc == 0 or current_duration_distributed_users == 0: continue
+
+                if idx_slab == num_slab_configs -1:
+                    users_for_this_slab_fc = current_duration_distributed_users
+                else:
+                    users_for_this_slab_fc = math.ceil(users_for_this_duration_fc * (slab_share_pct_fc / 100.0))
+                    users_for_this_slab_fc = min(users_for_this_slab_fc, current_duration_distributed_users)
+
                 if users_for_this_slab_fc == 0: continue
-                
-                if dur_val_fc not in slot_fees or dur_val_fc not in slot_distribution: continue
+                current_slab_distributed_users = users_for_this_slab_fc
 
-                for slot_num_fc, slot_config_meta_fc in slot_fees[dur_val_fc].items(): 
-                    if slot_config_meta_fc['blocked']: continue
+                # Slots for this slab/duration
+                slots_for_this_config = slot_distribution.get(dur_val_fc, {})
+                if not slots_for_this_config : continue
+                
+                num_slot_configs = sum(1 for s_cfg in slot_fees.get(dur_val_fc, {}).values() if not s_cfg.get('blocked', False)) # Count unblocked
+                
+                # Filter and sort unblocked slots
+                unblocked_slot_items = {k: v for k, v in slots_for_this_config.items() if not slot_fees.get(dur_val_fc, {}).get(k, {}).get('blocked', False)}
+                if not unblocked_slot_items: continue
+                
+                sorted_slot_shares = sorted(unblocked_slot_items.items(), key=lambda item: item[1], reverse=True)
+                num_unblocked_slot_configs = len(sorted_slot_shares)
+
+
+                for idx_slot, (slot_num_fc, slot_user_share_pct) in enumerate(sorted_slot_shares):
+                    slot_config_meta_fc = slot_fees.get(dur_val_fc, {}).get(slot_num_fc, {})
+                    if slot_user_share_pct == 0 or current_slab_distributed_users == 0: continue
                     
-                    slot_user_share_pct = slot_distribution[dur_val_fc].get(slot_num_fc, 0)
-                    if slot_user_share_pct == 0: continue
-                    users_in_this_specific_cohort_fc = math.ceil(users_for_this_slab_fc * (slot_user_share_pct / 100))
+                    if idx_slot == num_unblocked_slot_configs - 1:
+                        users_in_this_specific_cohort_fc = current_slab_distributed_users
+                    else:
+                        users_in_this_specific_cohort_fc = math.ceil(users_for_this_slab_fc * (slot_user_share_pct / 100.0))
+                        users_in_this_specific_cohort_fc = min(users_in_this_specific_cohort_fc, current_slab_distributed_users)
+                    
                     if users_in_this_specific_cohort_fc == 0: continue
                     
-                    # Ensure we don't overallocate from the temp_rejoining_users_for_allocation
-                    # And also from newly_acquired_this_month_fc_val (though this is implicitly handled by total_onboarding)
-                    # This logic can get tricky if sum of shares > 100. For now, assume shares are managed.
                     from_rejoin_pool_fc = min(users_in_this_specific_cohort_fc, temp_rejoining_users_for_allocation)
                     from_newly_acquired_fc = users_in_this_specific_cohort_fc - from_rejoin_pool_fc
-                    
-                    # We need to ensure 'from_newly_acquired_fc' doesn't exceed actual available new users for the month for this cohort.
-                    # This requires tracking how many new users have been allocated across all duration/slab/slot cohorts.
-                    # This is a complex allocation problem if shares don't sum perfectly.
-                    # Simplified assumption: the users_in_this_specific_cohort_fc are available from the total_onboarding pool.
-
                     temp_rejoining_users_for_allocation -= from_rejoin_pool_fc 
                     if temp_rejoining_users_for_allocation < 0: temp_rejoining_users_for_allocation = 0
 
-                    fee_on_commitment_frac_fc = slot_config_meta_fc['fee'] / 100
+                    fee_on_commitment_frac_fc = slot_config_meta_fc.get('fee', 0) / 100.0 # Safer get
                     total_commitment_per_user_fc = installment_val_fc * dur_val_fc
                     fee_amount_per_user_fc = total_commitment_per_user_fc * fee_on_commitment_frac_fc
                     total_nii_for_cohort_lifetime_per_user = 0
@@ -315,9 +361,7 @@ def run_forecast(config_param_fc):
 
                     for j_installment_num in range(dur_val_fc): 
                         collection_month_of_this_installment_idx = m_idx_fc + j_installment_num
-                        days_this_installment_held = days_between_specific_dates(
-                            collection_month_of_this_installment_idx, global_collection_day,
-                            payout_due_month_idx_for_cohort_fc, global_payout_day)
+                        days_this_installment_held = days_between_specific_dates(collection_month_of_this_installment_idx, global_collection_day, payout_due_month_idx_for_cohort_fc, global_payout_day)
                         nii_from_this_installment = installment_val_fc * daily_interest_rate_fc * days_this_installment_held
                         total_nii_for_cohort_lifetime_per_user += nii_from_this_installment
                     
@@ -362,11 +406,16 @@ def run_forecast(config_param_fc):
                     deposit_log_data_fc.append({"Month": current_month_num_fc, "Users Joining": users_in_this_specific_cohort_fc, "Installments Collected": cash_in_installments_this_month_cohort_fc, "NII This Month (Avg)": nii_to_log_for_joining_month})
                     default_log_data_fc.append({"Month": current_month_num_fc, "Year": current_year_num_fc, "Pre-Payout Defaulters (Cohort)": num_pre_payout_defaulters_fc,"Post-Payout Defaulters (Cohort)": num_post_payout_defaulters_fc,"Default Loss (Cohort Lifetime)": total_loss_for_cohort_fc})
                     lifecycle_data_fc.append({"Month": current_month_num_fc, "New Users Acquired for Cohort": from_newly_acquired_fc, "Rejoining Users for Cohort": from_rejoin_pool_fc, "Total Onboarding to Cohort": users_in_this_specific_cohort_fc}) 
+                    
                     rejoin_at_month_idx_fc = m_idx_fc + dur_val_fc + int(current_rest_period_months_fc)
                     non_defaulters_in_cohort = users_in_this_specific_cohort_fc - num_defaulters_total_fc
                     if non_defaulters_in_cohort < 0: non_defaulters_in_cohort = 0 
                     if rejoin_at_month_idx_fc < months_fc and non_defaulters_in_cohort > 0 :
                         rejoin_tracker_fc[rejoin_at_month_idx_fc] = rejoin_tracker_fc.get(rejoin_at_month_idx_fc, 0) + non_defaulters_in_cohort
+                    
+                    current_slab_distributed_users -= users_in_this_specific_cohort_fc # Decrement for next slot
+                current_duration_distributed_users -= users_for_this_slab_fc # Decrement for next slab
+            remaining_users_to_distribute -= users_for_this_duration_fc # Decrement for next duration
         
     df_forecast_fc = pd.DataFrame(forecast_data_fc).fillna(0)
     df_deposit_log_fc = pd.DataFrame(deposit_log_data_fc).fillna(0)
@@ -488,133 +537,93 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             df_profit_share_chart_data_main["Year"] = df_profit_share_chart_data_main["Year"].astype(str)
 
         FIG_SIZE_MAIN = (10, 4.5)
+        # Check if dataframes for charts are not empty and contain necessary columns and non-zero/non-null data
+        can_plot_m1 = not df_monthly_chart_data_main.empty and \
+                      all(col in df_monthly_chart_data_main.columns for col in ["Month", "Pools Formed", "Cash In (Installments This Month)"]) and \
+                      not df_monthly_chart_data_main[["Pools Formed", "Cash In (Installments This Month)"]].fillna(0).eq(0).all().all()
+        
+        can_plot_m2 = not df_monthly_chart_data_main.empty and \
+                      all(col in df_monthly_chart_data_main.columns for col in ["Month", "Users Joining This Month", "Gross Profit This Month (Accrued from New Cohorts)"]) and \
+                      not df_monthly_chart_data_main[["Users Joining This Month", "Gross Profit This Month (Accrued from New Cohorts)"]].fillna(0).eq(0).all().all()
+
+        can_plot_y1 = not df_yearly_chart_data_main.empty and \
+                      all(col in df_yearly_chart_data_main.columns for col in ["Year", "Pools Formed", "Cash In (Installments This Month)"]) and \
+                      not df_yearly_chart_data_main[["Pools Formed", "Cash In (Installments This Month)"]].fillna(0).eq(0).all().all()
+
+        can_plot_y2 = not df_yearly_chart_data_main.empty and \
+                      all(col in df_yearly_chart_data_main.columns for col in ["Year", "Users Joining This Month", "Annual Gross Profit (Accrued from New Cohorts)"]) and \
+                      not df_yearly_chart_data_main[["Users Joining This Month", "Annual Gross Profit (Accrued from New Cohorts)"]].fillna(0).eq(0).all().all()
+        
+        can_plot_y3 = not df_profit_share_chart_data_main.empty and \
+                      all(col in df_profit_share_chart_data_main.columns for col in ["Year", "External Capital Needed (Annual Accrual)", "Annual Fee Collected (Accrued)", "Annual Gross Profit (Accrued)"]) and \
+                      not df_profit_share_chart_data_main[["External Capital Needed (Annual Accrual)", "Annual Fee Collected (Accrued)", "Annual Gross Profit (Accrued)"]].fillna(0).eq(0).all().all()
+
 
         st.markdown("##### Chart 1: Monthly Pools Formed vs. Cash In (Installments)")
-        chart_cols_m1_main = ["Month", "Pools Formed", "Cash In (Installments This Month)"]
-        if not df_monthly_chart_data_main.empty and all(col in df_monthly_chart_data_main.columns for col in chart_cols_m1_main) and \
-           not df_monthly_chart_data_main[["Pools Formed", "Cash In (Installments This Month)"]].fillna(0).eq(0).all().all():
+        if can_plot_m1:
             fig1_main, ax1_main = plt.subplots(figsize=FIG_SIZE_MAIN)
             ax2_main = ax1_main.twinx()
-            bars1_main = ax1_main.bar(df_monthly_chart_data_main["Month"], df_monthly_chart_data_main["Pools Formed"], 
-                                    color=COLOR_PRIMARY_BAR, label="Pools Formed This Month", width=0.7)
-            line1_main, = ax2_main.plot(df_monthly_chart_data_main["Month"], df_monthly_chart_data_main["Cash In (Installments This Month)"], 
-                                      color=COLOR_SECONDARY_LINE, label="Cash In (Installments)", marker='o', linewidth=2, markersize=4)
-            ax1_main.set_xlabel("Month")
-            ax1_main.set_ylabel("Pools Formed", color=COLOR_PRIMARY_BAR)
-            ax2_main.set_ylabel("Cash In (Installments)", color=COLOR_SECONDARY_LINE)
-            ax1_main.tick_params(axis='y', labelcolor=COLOR_PRIMARY_BAR)
-            ax2_main.tick_params(axis='y', labelcolor=COLOR_SECONDARY_LINE)
-            ax2_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
-            ax1_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
-            handles_main = [bars1_main, line1_main]
-            labels_main = [h.get_label() for h in handles_main]
-            fig1_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2)
-            fig1_main.tight_layout(rect=[0, 0.05, 1, 1])
-            st.pyplot(fig1_main)
-        else:
-            st.caption("Not enough data or all values are zero for Chart 1.")
+            bars1_main = ax1_main.bar(df_monthly_chart_data_main["Month"], df_monthly_chart_data_main["Pools Formed"], color=COLOR_PRIMARY_BAR, label="Pools Formed This Month", width=0.7)
+            line1_main, = ax2_main.plot(df_monthly_chart_data_main["Month"], df_monthly_chart_data_main["Cash In (Installments This Month)"], color=COLOR_SECONDARY_LINE, label="Cash In (Installments)", marker='o', linewidth=2, markersize=4)
+            ax1_main.set_xlabel("Month"); ax1_main.set_ylabel("Pools Formed", color=COLOR_PRIMARY_BAR); ax2_main.set_ylabel("Cash In (Installments)", color=COLOR_SECONDARY_LINE)
+            ax1_main.tick_params(axis='y', labelcolor=COLOR_PRIMARY_BAR); ax2_main.tick_params(axis='y', labelcolor=COLOR_SECONDARY_LINE)
+            ax2_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}")); ax1_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
+            handles_main = [bars1_main, line1_main]; labels_main = [h.get_label() for h in handles_main]
+            fig1_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2); fig1_main.tight_layout(rect=[0, 0.05, 1, 1]); st.pyplot(fig1_main)
+        else: st.caption("Not enough data or all values are zero for Chart 1.")
 
         st.markdown("##### Chart 2: Monthly Users Joining vs. Accrued Gross Profit (from New Cohorts)")
-        chart_cols_m2_main = ["Month", "Users Joining This Month", "Gross Profit This Month (Accrued from New Cohorts)"]
-        if not df_monthly_chart_data_main.empty and all(col in df_monthly_chart_data_main.columns for col in chart_cols_m2_main) and \
-            not df_monthly_chart_data_main[["Users Joining This Month", "Gross Profit This Month (Accrued from New Cohorts)"]].fillna(0).eq(0).all().all():
+        if can_plot_m2:
             fig2_main, ax3_main = plt.subplots(figsize=FIG_SIZE_MAIN)
             ax4_main = ax3_main.twinx()
-            bars2_main = ax3_main.bar(df_monthly_chart_data_main["Month"], df_monthly_chart_data_main["Users Joining This Month"], 
-                                    color=COLOR_ACCENT_BAR, label="Users Joining This Month", width=0.7)
-            line2_main, = ax4_main.plot(df_monthly_chart_data_main["Month"], df_monthly_chart_data_main["Gross Profit This Month (Accrued from New Cohorts)"], 
-                                      color=COLOR_ACCENT_LINE, label="Accrued Gross Profit (New Cohorts)", marker='o', linewidth=2, markersize=4)
-            ax3_main.set_xlabel("Month")
-            ax3_main.set_ylabel("Users Joining", color=COLOR_ACCENT_BAR)
-            ax4_main.set_ylabel("Accrued Gross Profit", color=COLOR_ACCENT_LINE)
-            ax3_main.tick_params(axis='y', labelcolor=COLOR_ACCENT_BAR)
-            ax4_main.tick_params(axis='y', labelcolor=COLOR_ACCENT_LINE)
-            ax3_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
-            ax4_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
-            handles_main = [bars2_main, line2_main]
-            labels_main = [h.get_label() for h in handles_main]
-            fig2_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2)
-            fig2_main.tight_layout(rect=[0, 0.05, 1, 1])
-            st.pyplot(fig2_main)
-        else:
-            st.caption("Not enough data or all values are zero for Chart 2.")
+            bars2_main = ax3_main.bar(df_monthly_chart_data_main["Month"], df_monthly_chart_data_main["Users Joining This Month"], color=COLOR_ACCENT_BAR, label="Users Joining This Month", width=0.7)
+            line2_main, = ax4_main.plot(df_monthly_chart_data_main["Month"], df_monthly_chart_data_main["Gross Profit This Month (Accrued from New Cohorts)"], color=COLOR_ACCENT_LINE, label="Accrued Gross Profit (New Cohorts)", marker='o', linewidth=2, markersize=4)
+            ax3_main.set_xlabel("Month"); ax3_main.set_ylabel("Users Joining", color=COLOR_ACCENT_BAR); ax4_main.set_ylabel("Accrued Gross Profit", color=COLOR_ACCENT_LINE)
+            ax3_main.tick_params(axis='y', labelcolor=COLOR_ACCENT_BAR); ax4_main.tick_params(axis='y', labelcolor=COLOR_ACCENT_LINE)
+            ax3_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}")); ax4_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
+            handles_main = [bars2_main, line2_main]; labels_main = [h.get_label() for h in handles_main]
+            fig2_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2); fig2_main.tight_layout(rect=[0, 0.05, 1, 1]); st.pyplot(fig2_main)
+        else: st.caption("Not enough data or all values are zero for Chart 2.")
 
         st.markdown("##### Chart 3: Annual Pools Formed vs. Annual Cash In (Installments)")
-        chart_cols_y1_main = ["Year", "Pools Formed", "Cash In (Installments This Month)"] 
-        if not df_yearly_chart_data_main.empty and all(col in df_yearly_chart_data_main.columns for col in chart_cols_y1_main) and \
-            not df_yearly_chart_data_main[["Pools Formed", "Cash In (Installments This Month)"]].fillna(0).eq(0).all().all():
+        if can_plot_y1:
             fig3_main, ax5_main = plt.subplots(figsize=FIG_SIZE_MAIN)
             ax6_main = ax5_main.twinx()
-            bars3_main = ax5_main.bar(df_yearly_chart_data_main["Year"], df_yearly_chart_data_main["Pools Formed"], 
-                                    color=COLOR_PRIMARY_BAR, label="Annual Pools Formed", width=0.6) 
-            line3_main, = ax6_main.plot(df_yearly_chart_data_main["Year"], df_yearly_chart_data_main["Cash In (Installments This Month)"], 
-                                      color=COLOR_SECONDARY_LINE, label="Annual Cash In (Installments)", marker='o', linewidth=2, markersize=4)
-            ax5_main.set_xlabel("Year")
-            ax5_main.set_ylabel("Annual Pools Formed", color=COLOR_PRIMARY_BAR)
-            ax6_main.set_ylabel("Annual Cash In", color=COLOR_SECONDARY_LINE)
-            ax5_main.tick_params(axis='y', labelcolor=COLOR_PRIMARY_BAR)
-            ax6_main.tick_params(axis='y', labelcolor=COLOR_SECONDARY_LINE)
-            ax5_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
-            ax6_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
-            handles_main = [bars3_main, line3_main]
-            labels_main = [h.get_label() for h in handles_main]
-            fig3_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2)
-            fig3_main.tight_layout(rect=[0, 0.05, 1, 1])
-            st.pyplot(fig3_main)
-        else:
-            st.caption("Not enough data or all values are zero for Chart 3.")
+            bars3_main = ax5_main.bar(df_yearly_chart_data_main["Year"], df_yearly_chart_data_main["Pools Formed"], color=COLOR_PRIMARY_BAR, label="Annual Pools Formed", width=0.6) 
+            line3_main, = ax6_main.plot(df_yearly_chart_data_main["Year"], df_yearly_chart_data_main["Cash In (Installments This Month)"], color=COLOR_SECONDARY_LINE, label="Annual Cash In (Installments)", marker='o', linewidth=2, markersize=4)
+            ax5_main.set_xlabel("Year"); ax5_main.set_ylabel("Annual Pools Formed", color=COLOR_PRIMARY_BAR); ax6_main.set_ylabel("Annual Cash In", color=COLOR_SECONDARY_LINE)
+            ax5_main.tick_params(axis='y', labelcolor=COLOR_PRIMARY_BAR); ax6_main.tick_params(axis='y', labelcolor=COLOR_SECONDARY_LINE)
+            ax5_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}")); ax6_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
+            handles_main = [bars3_main, line3_main]; labels_main = [h.get_label() for h in handles_main]
+            fig3_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2); fig3_main.tight_layout(rect=[0, 0.05, 1, 1]); st.pyplot(fig3_main)
+        else: st.caption("Not enough data or all values are zero for Chart 3.")
             
         st.markdown("##### Chart 4: Annual Users Joining vs. Annual Accrued Gross Profit (from New Cohorts)")
-        chart_cols_y2_main = ["Year", "Users Joining This Month", "Annual Gross Profit (Accrued from New Cohorts)"]
-        if not df_yearly_chart_data_main.empty and all(col in df_yearly_chart_data_main.columns for col in chart_cols_y2_main) and \
-            not df_yearly_chart_data_main[["Users Joining This Month", "Annual Gross Profit (Accrued from New Cohorts)"]].fillna(0).eq(0).all().all():
+        if can_plot_y2:
             fig4_main, ax7_main = plt.subplots(figsize=FIG_SIZE_MAIN)
             ax8_main = ax7_main.twinx()
-            bars4_main = ax7_main.bar(df_yearly_chart_data_main["Year"], df_yearly_chart_data_main["Users Joining This Month"], 
-                                    color=COLOR_ACCENT_BAR, label="Annual Users Joining", width=0.6)
-            line4_main, = ax8_main.plot(df_yearly_chart_data_main["Year"], df_yearly_chart_data_main["Annual Gross Profit (Accrued from New Cohorts)"], 
-                                      color=COLOR_ACCENT_LINE, label="Annual Accrued Gross Profit (New Cohorts)", marker='o', linewidth=2, markersize=4)
-            ax7_main.set_xlabel("Year")
-            ax7_main.set_ylabel("Annual Users Joining", color=COLOR_ACCENT_BAR)
-            ax8_main.set_ylabel("Annual Accrued Profit", color=COLOR_ACCENT_LINE)
-            ax7_main.tick_params(axis='y', labelcolor=COLOR_ACCENT_BAR)
-            ax8_main.tick_params(axis='y', labelcolor=COLOR_ACCENT_LINE)
-            ax7_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
-            ax8_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
-            handles_main = [bars4_main, line4_main]
-            labels_main = [h.get_label() for h in handles_main]
-            fig4_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2)
-            fig4_main.tight_layout(rect=[0, 0.05, 1, 1])
-            st.pyplot(fig4_main)
-        else:
-            st.caption("Not enough data or all values are zero for Chart 4.")
+            bars4_main = ax7_main.bar(df_yearly_chart_data_main["Year"], df_yearly_chart_data_main["Users Joining This Month"], color=COLOR_ACCENT_BAR, label="Annual Users Joining", width=0.6)
+            line4_main, = ax8_main.plot(df_yearly_chart_data_main["Year"], df_yearly_chart_data_main["Annual Gross Profit (Accrued from New Cohorts)"], color=COLOR_ACCENT_LINE, label="Annual Accrued Gross Profit (New Cohorts)", marker='o', linewidth=2, markersize=4)
+            ax7_main.set_xlabel("Year"); ax7_main.set_ylabel("Annual Users Joining", color=COLOR_ACCENT_BAR); ax8_main.set_ylabel("Annual Accrued Profit", color=COLOR_ACCENT_LINE)
+            ax7_main.tick_params(axis='y', labelcolor=COLOR_ACCENT_BAR); ax8_main.tick_params(axis='y', labelcolor=COLOR_ACCENT_LINE)
+            ax7_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}")); ax8_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
+            handles_main = [bars4_main, line4_main]; labels_main = [h.get_label() for h in handles_main]
+            fig4_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2); fig4_main.tight_layout(rect=[0, 0.05, 1, 1]); st.pyplot(fig4_main)
+        else: st.caption("Not enough data or all values are zero for Chart 4.")
 
         st.markdown("##### Chart 5: Annual External Capital vs. Fee & Accrued Profit")
-        chart_cols_y3_main = ["Year", "External Capital Needed (Annual Accrual)", "Annual Fee Collected (Accrued)", "Annual Gross Profit (Accrued)"]
-        if not df_profit_share_chart_data_main.empty and all(col in df_profit_share_chart_data_main.columns for col in chart_cols_y3_main) and \
-            not df_profit_share_chart_data_main[["External Capital Needed (Annual Accrual)", "Annual Fee Collected (Accrued)", "Annual Gross Profit (Accrued)"]].fillna(0).eq(0).all().all():
+        if can_plot_y3:
             fig5_main, ax9_main = plt.subplots(figsize=FIG_SIZE_MAIN)
             ax10_main = ax9_main.twinx()
-            bars5_main = ax9_main.bar(df_profit_share_chart_data_main["Year"], df_profit_share_chart_data_main["External Capital Needed (Annual Accrual)"], 
-                                    color=COLOR_HIGHLIGHT_BAR, label="External Capital (Accrual)", width=0.6)
-            line5_fee_main, = ax10_main.plot(df_profit_share_chart_data_main["Year"], df_profit_share_chart_data_main["Annual Fee Collected (Accrued)"], 
-                                           color=COLOR_PRIMARY_BAR, marker='o', label="Annual Fee (Accrual)", linewidth=2, markersize=4)
-            line5_profit_main, = ax10_main.plot(df_profit_share_chart_data_main["Year"], df_profit_share_chart_data_main["Annual Gross Profit (Accrued)"], 
-                                              color=COLOR_SECONDARY_LINE, marker='s', label="Annual Gross Profit (Accrual)", linestyle='--', linewidth=2, markersize=4)
-            ax9_main.set_xlabel("Year")
-            ax9_main.set_ylabel("External Capital", color=COLOR_HIGHLIGHT_BAR)
-            ax10_main.set_ylabel("Fee & Profit (Accrued)", color=TEXT_COLOR)
-            ax9_main.tick_params(axis='y', labelcolor=COLOR_HIGHLIGHT_BAR)
-            ax10_main.tick_params(axis='y', labelcolor=TEXT_COLOR)
-            ax9_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
-            ax10_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
-            handles_main = [bars5_main, line5_fee_main, line5_profit_main]
-            labels_main = [h.get_label() for h in handles_main]
-            fig5_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=3)
-            fig5_main.tight_layout(rect=[0, 0.05, 1, 1])
-            st.pyplot(fig5_main)
-        else:
-            st.caption("Not enough data or all values are zero for Chart 5.")
+            bars5_main = ax9_main.bar(df_profit_share_chart_data_main["Year"], df_profit_share_chart_data_main["External Capital Needed (Annual Accrual)"], color=COLOR_HIGHLIGHT_BAR, label="External Capital (Accrual)", width=0.6)
+            line5_fee_main, = ax10_main.plot(df_profit_share_chart_data_main["Year"], df_profit_share_chart_data_main["Annual Fee Collected (Accrued)"], color=COLOR_PRIMARY_BAR, marker='o', label="Annual Fee (Accrual)", linewidth=2, markersize=4)
+            line5_profit_main, = ax10_main.plot(df_profit_share_chart_data_main["Year"], df_profit_share_chart_data_main["Annual Gross Profit (Accrued)"], color=COLOR_SECONDARY_LINE, marker='s', label="Annual Gross Profit (Accrual)", linestyle='--', linewidth=2, markersize=4)
+            ax9_main.set_xlabel("Year"); ax9_main.set_ylabel("External Capital", color=COLOR_HIGHLIGHT_BAR); ax10_main.set_ylabel("Fee & Profit (Accrued)", color=TEXT_COLOR)
+            ax9_main.tick_params(axis='y', labelcolor=COLOR_HIGHLIGHT_BAR); ax10_main.tick_params(axis='y', labelcolor=TEXT_COLOR)
+            ax9_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}")); ax10_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
+            handles_main = [bars5_main, line5_fee_main, line5_profit_main]; labels_main = [h.get_label() for h in handles_main]
+            fig5_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=3); fig5_main.tight_layout(rect=[0, 0.05, 1, 1]); st.pyplot(fig5_main)
+        else: st.caption("Not enough data or all values are zero for Chart 5.")
 
         sheet_name_prefix_main = scenario_data_main['name'][:25].replace(" ", "_").replace("/", "_")
         if not df_forecast_main.empty:
@@ -634,4 +643,3 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
 
 output_excel_main.seek(0)
 st.sidebar.download_button("📥 Download All Scenarios Excel", data=output_excel_main, file_name="all_scenarios_rosca_forecast.xlsx")
-
