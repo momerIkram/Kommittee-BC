@@ -1,5 +1,3 @@
---- START OF FILE rosca_forecast_app_v14 (8).py ---
-
 import streamlit as st
 st.set_page_config(layout="wide", page_title="ROSCA Forecast App", page_icon="📊", initial_sidebar_state="expanded")
 
