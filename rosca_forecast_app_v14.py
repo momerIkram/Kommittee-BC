@@ -60,9 +60,9 @@ for i in range(scenario_count):
         total_market = st.number_input("Total Market Size", value=20000000, key=f"market_{i}")
         tam_pct = st.number_input("TAM % of Market", min_value=1, max_value=100, value=10, key=f"tam_pct_{i}")
         start_pct = st.number_input("Starting TAM % (Month 1)", min_value=1, max_value=100, value=10, key=f"start_pct_{i}")
-        monthly_growth = st.number_input("Monthly Growth Rate (%)", value=2.0, key=f"growth_{i}")
-        annual_growth = st.number_input("Annual TAM Growth (%)", value=5.0, key=f"annual_{i}")
-        cap_tam = st.checkbox("Cap TAM Growth?", value=False, key=f"cap_toggle_{i}")
+        monthly_growth = st.number_input("Monthly Growth Rate (%)", value=10.0, key=f"growth_{i}", format="%.2f") # Ensure format for float
+        annual_growth = st.number_input("Annual TAM Growth (%)", value=5.0, key=f"annual_{i}", format="%.2f")
+        cap_tam = st.checkbox("Cap TAM Growth?", value=False, key=f"cap_toggle_{i}") # Default to False for testing uncapped growth
         scenarios.append({
             "name": name, "total_market": total_market, "tam_pct": tam_pct,
             "start_pct": start_pct, "monthly_growth": monthly_growth,
@@ -87,12 +87,12 @@ global_pre_payout_recovery_pct = st.sidebar.number_input(
 )
 global_target_profit_margin_pct = st.sidebar.number_input(
     "Target Profit Margin % (on Total Commitment)",
-    min_value=0.0, max_value=50.0, value=5.0, step=0.5, # Default value for the target margin
+    min_value=0.0, max_value=50.0, value=5.0, step=0.5, 
     help="Desired profit margin from each user's total commitment, used for Fee Suggestion Calculator IF enabled below."
 )
 use_target_profit_margin_for_fee_sugg = st.sidebar.checkbox(
     "Enable Target Profit Margin for Fee Suggestion",
-    value=True, # Default to True, meaning the target profit margin will be used
+    value=True, 
     key="enable_target_profit_fee_sugg",
     help="If checked, fee suggestion aims for Target Profit Margin. If unchecked, aims to cover NII & losses (breakeven)."
 )
@@ -107,68 +107,83 @@ yearly_duration_share = {}
 slab_map = {}
 slot_fees = {}
 slot_distribution = {}
-first_year_defaults = {} # To store first year's duration share values for subsequent year defaults
+first_year_defaults = {} 
 
 for y_config in range(1, 6):
     with st.expander(f"Year {y_config} Duration Share"):
         yearly_duration_share[y_config] = {}
         total_dur_share_config = 0
-        # Ensure all selected durations are present for configuration
         for d_key in durations:
             if d_key not in yearly_duration_share[y_config]:
                  yearly_duration_share[y_config][d_key] = 0
-
-        for d_config in durations: # Iterate through selected durations
+        for d_config in durations: 
             key_config = f"yds_{y_config}_{d_config}"
-            # Use stored first_year_default if y_config > 1, else 0
-            default_val_to_use = first_year_defaults.get(d_config, 0) if y_config > 1 else 0
+            default_val_to_use = first_year_defaults.get(d_config, 0) if y_config > 1 else (100 // len(durations) if d_config == durations[0] else 0) # Simple default for first year
+            if y_config == 1 and d_config == durations[0] and not durations_input: # if no selection, default first duration to 100
+                 default_val_to_use = 100
+
             val_config = st.number_input(f"{d_config}M – Year {y_config} (%)", min_value=0, max_value=100, value=default_val_to_use, step=1, key=key_config)
             yearly_duration_share[y_config][d_config] = val_config
             if y_config == 1:
-                first_year_defaults[d_config] = val_config # Store first year's val for subsequent year defaults
+                first_year_defaults[d_config] = val_config 
             total_dur_share_config += val_config
-        if abs(total_dur_share_config - 100.0) > 1e-7 and total_dur_share_config > 0: # Check if sum is not 100 (allowing for float issues)
+        if abs(total_dur_share_config - 100.0) > 1e-7 and total_dur_share_config > 0 and len(durations)>0 : 
             if total_dur_share_config > 100:
                 validation_messages.append(f"⚠️ Year {y_config} duration share total is {total_dur_share_config}%. It must not exceed 100%.")
-            # If < 100, it means not all users are assigned a duration, which is a valid configuration if intended.
+            elif total_dur_share_config < 100:
+                 validation_messages.append(f"⚠️ Year {y_config} duration share total is {total_dur_share_config}%. It should be 100% to assign all users.")
+
 
 for d_config in durations:
     with st.expander(f"{d_config}M Slab Distribution"):
         slab_map[d_config] = {}
         total_slab_pct_config = 0
+        # Default first slab to 100% if only one slab, or for easier testing
+        default_slab_val = 100 if len([1000, 2000, 5000, 10000, 15000, 20000, 25000, 50000]) == 1 else 0
+        first_slab_set = False
+
         for slab_amount_config in [1000, 2000, 5000, 10000, 15000, 20000, 25000, 50000]:
             key_config = f"slab_{d_config}_{slab_amount_config}"
-            val_config = st.number_input(f"Slab {slab_amount_config} – {d_config}M (%)", min_value=0, max_value=100, value=0, step=1, key=key_config)
+            current_default = 0
+            if not first_slab_set and slab_amount_config == 1000: # Default first slab to 100 for simplicity if not set
+                current_default = 100
+                first_slab_set = True # ensure only first gets this default if others are 0
+
+            val_config = st.number_input(f"Slab {slab_amount_config} – {d_config}M (%)", min_value=0, max_value=100, value=current_default, step=1, key=key_config)
             slab_map[d_config][slab_amount_config] = val_config
             total_slab_pct_config += val_config
         if abs(total_slab_pct_config - 100.0) > 1e-7 and total_slab_pct_config > 0:
              if total_slab_pct_config > 100:
                 validation_messages.append(f"⚠️ Slab distribution for {d_config}M totals {total_slab_pct_config}%. It must not exceed 100%.")
+             elif total_slab_pct_config < 100:
+                validation_messages.append(f"⚠️ Slab distribution for {d_config}M totals {total_slab_pct_config}%. It should be 100%.")
+
 
     with st.expander(f"{d_config}M Slot Fees & Blocking"):
         if d_config not in slot_fees: slot_fees[d_config] = {}
         if d_config not in slot_distribution: slot_distribution[d_config] = {}
-        total_slot_dist_pct_config = 0 # To check sum of slot distribution percentages for this duration
+        total_slot_dist_pct_config = 0 
+        
+        # Default first slot to 100% for easier testing if only one slot or others are 0
+        default_slot_pct = 100 // d_config if d_config > 0 else 0 # simple equal distribution for default
+        remainder_slot_pct = 100 % d_config if d_config > 0 else 0
 
-        for s_config in range(1, d_config + 1): # s_config is slot number (1-indexed)
+
+        for s_config in range(1, d_config + 1): 
             example_slab_sugg = 1000
             total_commit_sugg = d_config * example_slab_sugg
-
             current_kibor_sugg_frac = kibor / 100
             current_spread_sugg_frac = spread / 100
             current_default_rate_sugg_frac = default_rate / 100
             current_default_pre_pct_sugg_frac = default_pre_pct / 100
             current_default_post_pct_sugg_frac = default_post_pct / 100
             current_g_pre_payout_recovery_sugg_frac = global_pre_payout_recovery_pct / 100
-
             if use_target_profit_margin_for_fee_sugg:
                 current_g_target_profit_margin_sugg_frac = global_target_profit_margin_pct / 100
                 target_profit_margin_display_for_help = global_target_profit_margin_pct
             else:
-                current_g_target_profit_margin_sugg_frac = 0.0 # Aim for breakeven (covers NII and Loss only)
+                current_g_target_profit_margin_sugg_frac = 0.0 
                 target_profit_margin_display_for_help = 0.0
-
-
             total_nii_sugg_per_user_lifetime = example_slab_sugg * \
                                     ((current_kibor_sugg_frac + current_spread_sugg_frac) / 12) * \
                                     (d_config * (d_config + 1) / 2)
@@ -183,67 +198,61 @@ for d_config in durations:
             if total_commit_sugg > 0:
                 suggested_fee_pct_val = (suggested_fee_amount_sugg_per_user / total_commit_sugg) * 100
             suggested_fee_pct_val = max(0, suggested_fee_pct_val)
-
             help_text_sugg = (f"Suggested: {suggested_fee_pct_val:.2f}%. "
                               f"Fee calc based on: Target Profit={target_profit_margin_display_for_help:.1f}% "
                               f"(Enabled: {use_target_profit_margin_for_fee_sugg}), "
                               f"Example Slab={example_slab_sugg}, Duration={d_config}M. "
                               f"NII in sugg. is simplified. Actual NII/profit vary by slot & dates.")
-
             key_fee_config = f"fee_{d_config}_{s_config}"
             key_block_config = f"block_{d_config}_{s_config}"
             key_pct_config = f"slot_pct_d{d_config}_s{s_config}"
+            
+            current_slot_default_pct = default_slot_pct
+            if s_config <= remainder_slot_pct: # Distribute remainder to first few slots
+                current_slot_default_pct +=1
 
             fee_input_val = st.number_input(f"Slot {s_config} Fee % (on total commitment)", 0.0, 100.0, round(suggested_fee_pct_val,1) if suggested_fee_pct_val > 0 else 1.0 , key=key_fee_config, help=help_text_sugg, format="%.2f")
             blocked_input_val = st.checkbox(f"Block Slot {s_config}", key=key_block_config)
             slot_pct_input_val = st.number_input(
-                label=f"Slot {s_config} % of Users (Duration {d_config}M)", min_value=0, max_value=100, value=0, step=1, key=key_pct_config)
-
+                label=f"Slot {s_config} % of Users (Duration {d_config}M)", min_value=0, max_value=100, value=current_slot_default_pct, step=1, key=key_pct_config)
             slot_fees[d_config][s_config] = {"fee": fee_input_val, "blocked": blocked_input_val}
             slot_distribution[d_config][s_config] = slot_pct_input_val
-            total_slot_dist_pct_config += slot_pct_input_val # Sum configured percentages
-
+            total_slot_dist_pct_config += slot_pct_input_val 
         if abs(total_slot_dist_pct_config - 100.0) > 1e-7 and total_slot_dist_pct_config > 0 :
             if total_slot_dist_pct_config > 100 :
                 validation_messages.append(f"⚠️ Slot distribution for {d_config}M (sum of ALL configured slots) totals {total_slot_dist_pct_config}%. It must not exceed 100%.")
-            # If < 100, it means not all users are assigned to a slot based on configuration.
+            elif total_slot_dist_pct_config < 100 :
+                 validation_messages.append(f"⚠️ Slot distribution for {d_config}M (sum of ALL configured slots) totals {total_slot_dist_pct_config}%. It should be 100%.")
+
 
 if validation_messages:
     for msg_val in validation_messages: st.warning(msg_val)
     st.stop()
 
-
-# Helper for Hamilton method of apportionment
 def apportion_users(total_users_to_apportion, shares_dict):
     if total_users_to_apportion == 0:
         return {item: 0 for item in shares_dict}
-    if not shares_dict: # If shares_dict is empty
+    if not shares_dict: 
         return {}
-
-    # It's crucial that shares_dict values are percentages that define the *intended distribution*
-    # of the total_users_to_apportion. If their sum is not 100, the apportionment will still
-    # distribute the total_users_to_apportion based on the *proportions* of these shares.
-    # The calling code must ensure shares_dict reflects the desired distribution model.
-    # Example: if shares sum to 80, and you pass 100 users, it will scale shares to sum to 100 for distribution.
-    # If you only want to distribute 80 users, total_users_to_apportion should be 80.
-
-    sum_of_shares_input = sum(s for s in shares_dict.values() if s > 0) # Sum only positive shares
-    if sum_of_shares_input == 0 and total_users_to_apportion > 0: # No shares to distribute to, but users exist
-        # This is an edge case. Distribute to the first item if any, or return empty.
-        # For robustness, could distribute evenly or to first. Here, just return zeros.
-        # st.warning(f"Apportionment warning: No positive shares to distribute {total_users_to_apportion} users. Shares: {shares_dict}")
-        return {item: 0 for item in shares_dict}
+    sum_of_shares_input = sum(s for s in shares_dict.values() if s >= 0) # Allow 0 shares
+    if sum_of_shares_input == 0 and total_users_to_apportion > 0:
+        return {item: 0 for item in shares_dict} # Cannot distribute if all shares are zero
     if sum_of_shares_input == 0 and total_users_to_apportion == 0:
         return {item: 0 for item in shares_dict}
+    
+    # Filter out items with 0 share before normalization, add them back at the end with 0 users
+    positive_shares_dict = {item: share for item, share in shares_dict.items() if share > 0}
+    zero_share_items = [item for item, share in shares_dict.items() if share <= 0]
 
+    if not positive_shares_dict: # All shares were zero or negative
+        final_allocations = {item: 0 for item in shares_dict}
+        return final_allocations
 
-    # Normalize shares to sum to 1 for calculation if they don't already (e.g. if they sum to 80, scale up)
-    # This ensures we distribute the *entire* total_users_to_apportion pool proportionally.
-    normalized_shares = {item: (share / sum_of_shares_input) for item, share in shares_dict.items() if share > 0}
-    # Items with 0 share will get 0 users
-    final_allocations = {item: 0 for item in shares_dict}
+    sum_positive_shares = sum(positive_shares_dict.values())
 
-
+    # Normalize positive shares to sum to 1 for calculation
+    normalized_shares = {item: (share / sum_positive_shares) for item, share in positive_shares_dict.items()}
+    
     exact_allocations = {item: norm_share * total_users_to_apportion for item, norm_share in normalized_shares.items()}
     quotas = {item: int(alloc) for item, alloc in exact_allocations.items()}
     remainders = {item: alloc - quotas[item] for item, alloc in exact_allocations.items()}
@@ -258,6 +267,7 @@ def apportion_users(total_users_to_apportion, shares_dict):
             item_to_get_extra = sorted_by_remainder[i][0]
             quotas[item_to_get_extra] += 1
             
+    final_allocations = {item: 0 for item in shares_dict} # Initialize all with 0
     for item, num_users in quotas.items():
         final_allocations[item] = num_users
             
@@ -271,9 +281,15 @@ def run_forecast(config_param_fc):
     new_users_monthly_fc = [int(initial_tam_fc * (config_param_fc['start_pct'] / 100))]
     rejoin_tracker_fc = {}
     forecast_data_fc, deposit_log_data_fc, default_log_data_fc, lifecycle_data_fc = [], [], [], []
-    TAM_used_cumulative_fc = new_users_monthly_fc[0]
-    TAM_current_year_fc = initial_tam_fc
-    enforce_cap_growth_fc = config_param_fc.get("cap_tam", False)
+    
+    # TAM variables should be initialized based on the scenario config for cap_tam
+    is_cap_enforced_in_config = config_param_fc.get("cap_tam", False)
+    TAM_used_cumulative_fc = 0 # Reset for each forecast run
+    if is_cap_enforced_in_config:
+        TAM_used_cumulative_fc = new_users_monthly_fc[0] # Only count towards TAM if cap is on
+
+    TAM_current_year_fc = initial_tam_fc # Initial TAM for year 1
+
     current_kibor_rate_fc = config_param_fc['kibor'] / 100
     current_spread_rate_fc = config_param_fc['spread'] / 100
     daily_interest_rate_fc = (current_kibor_rate_fc + current_spread_rate_fc) / 365
@@ -284,39 +300,43 @@ def run_forecast(config_param_fc):
     global_default_post_frac_fc = default_post_pct / 100
     total_onboarding_log_fc = [0] * months_fc
 
+    # --- DEBUG FLAG ---
+    DEBUG_MODE = True  # Set to False to turn off debug prints
+    # ---
+
     for m_idx_fc in range(months_fc):
         current_month_num_fc = m_idx_fc + 1
         current_year_num_fc = m_idx_fc // 12 + 1
-        durations_for_this_year_fc_shares = yearly_duration_share.get(current_year_num_fc, {})
         
-        # Filter out durations with 0% share for apportionment
-        active_duration_shares = {d: s for d, s in durations_for_this_year_fc_shares.items() if s > 0}
-
-        rejoining_users_this_month_fc = rejoin_tracker_fc.get(m_idx_fc, 0)
         current_month_new_users_fc = new_users_monthly_fc[m_idx_fc] if m_idx_fc < len(new_users_monthly_fc) else 0
+        rejoining_users_this_month_fc = rejoin_tracker_fc.get(m_idx_fc, 0)
         total_onboarding_this_month_fc = current_month_new_users_fc + rejoining_users_this_month_fc
         total_onboarding_log_fc[m_idx_fc] = total_onboarding_this_month_fc
 
-        if total_onboarding_this_month_fc == 0 or not active_duration_shares:
-            # If no users or no active durations, skip to next month's growth calc
-            if m_idx_fc + 1 < months_fc:
-                growth_base_for_next_month_fc = total_onboarding_log_fc[m_idx_fc]
-                next_month_new_users_value = growth_base_for_next_month_fc * (config_param_fc['monthly_growth'] / 100)
-                next_month_new_users_calculated = int(round(next_month_new_users_value))
-                if (m_idx_fc + 1) % 12 == 0:
-                    TAM_current_year_fc = int(TAM_current_year_fc * (1 + config_param_fc['annual_growth'] / 100))
-                    TAM_used_cumulative_fc = 0
-                if enforce_cap_growth_fc:
-                    if (TAM_used_cumulative_fc + next_month_new_users_calculated) > TAM_current_year_fc:
-                        next_month_new_users_final = max(0, TAM_current_year_fc - TAM_used_cumulative_fc)
-                    else:
-                        next_month_new_users_final = next_month_new_users_calculated
-                else:
-                    next_month_new_users_final = next_month_new_users_calculated
-                new_users_monthly_fc.append(next_month_new_users_final)
-                TAM_used_cumulative_fc += next_month_new_users_final
-            continue # Skip to next month iteration
+        if DEBUG_MODE and m_idx_fc < 24 : 
+            st.write(f"--- Month {current_month_num_fc} (m_idx_fc: {m_idx_fc}) ---")
+            st.write(f"New Users This Month (start of loop): {current_month_new_users_fc}")
+            st.write(f"Rejoining Users This Month: {rejoining_users_this_month_fc}")
+            st.write(f"Total Onboarding This Month: {total_onboarding_this_month_fc}")
 
+        durations_for_this_year_fc_shares = yearly_duration_share.get(current_year_num_fc, {})
+        active_duration_shares = {d: s for d, s in durations_for_this_year_fc_shares.items() if s > 0}
+
+        if total_onboarding_this_month_fc == 0 or not active_duration_shares:
+            if m_idx_fc + 1 < months_fc: # Still need to calculate next month's (zero) new users if current is zero
+                growth_base_for_next_month_fc = total_onboarding_log_fc[m_idx_fc] # Will be 0
+                monthly_growth_rate_from_config = config_param_fc['monthly_growth'] / 100
+                next_month_new_users_value = growth_base_for_next_month_fc * monthly_growth_rate_from_config # will be 0
+                next_month_new_users_calculated = int(round(next_month_new_users_value)) # 0
+                
+                if is_cap_enforced_in_config and (m_idx_fc + 1) % 12 == 0:
+                    TAM_current_year_fc = int(TAM_current_year_fc * (1 + config_param_fc['annual_growth'] / 100))
+                    TAM_used_cumulative_fc = 0 
+                
+                next_month_new_users_final = next_month_new_users_calculated # Still 0 if base is 0
+                new_users_monthly_fc.append(next_month_new_users_final)
+                # TAM_used_cumulative_fc += next_month_new_users_final # Only add if cap is on, and it's 0 anyway
+            continue 
 
         apportioned_users_by_duration = apportion_users(total_onboarding_this_month_fc, active_duration_shares)
 
@@ -347,7 +367,6 @@ def run_forecast(config_param_fc):
                     slot_config_meta_fc = slot_fees[dur_val_fc][slot_num_fc]
                     fee_on_commitment_frac_fc = slot_config_meta_fc['fee'] / 100
                     total_commitment_per_user_fc = installment_val_fc * dur_val_fc
-                    # ... (rest of the cohort financial calculations remain the same)
                     fee_amount_per_user_fc = total_commitment_per_user_fc * fee_on_commitment_frac_fc
                     from_rejoin_pool_fc = 0 
                     from_newly_acquired_fc = users_in_this_specific_cohort_fc
@@ -413,20 +432,36 @@ def run_forecast(config_param_fc):
         
         if m_idx_fc + 1 < months_fc:
             growth_base_for_next_month_fc = total_onboarding_log_fc[m_idx_fc]
-            next_month_new_users_value = growth_base_for_next_month_fc * (config_param_fc['monthly_growth'] / 100)
+            monthly_growth_rate_from_config = config_param_fc['monthly_growth'] / 100
+            next_month_new_users_value = growth_base_for_next_month_fc * monthly_growth_rate_from_config
             next_month_new_users_calculated = int(round(next_month_new_users_value))
-            if (m_idx_fc + 1) % 12 == 0:
-                TAM_current_year_fc = int(TAM_current_year_fc * (1 + config_param_fc['annual_growth'] / 100))
-                TAM_used_cumulative_fc = 0
-            if enforce_cap_growth_fc:
+
+            if DEBUG_MODE and m_idx_fc < 23:
+                st.write(f"  Calculating for Next Month (M{current_month_num_fc+1}):")
+                st.write(f"    Growth Base (Total Onboarding M{current_month_num_fc}): {growth_base_for_next_month_fc}")
+                st.write(f"    Monthly Growth Rate Config: {monthly_growth_rate_from_config*100}%")
+                st.write(f"    New Users Value (float): {next_month_new_users_value:.2f}")
+                st.write(f"    New Users Calculated (rounded int): {next_month_new_users_calculated}")
+            
+            if is_cap_enforced_in_config:
+                if (m_idx_fc + 1) % 12 == 0: 
+                    TAM_current_year_fc = int(TAM_current_year_fc * (1 + config_param_fc['annual_growth'] / 100))
+                    TAM_used_cumulative_fc = 0 
                 if (TAM_used_cumulative_fc + next_month_new_users_calculated) > TAM_current_year_fc :
                     next_month_new_users_final = max(0, TAM_current_year_fc - TAM_used_cumulative_fc)
                 else:
                     next_month_new_users_final = next_month_new_users_calculated
-            else:
+                TAM_used_cumulative_fc += next_month_new_users_final # Add to TAM used only if cap is on
+            else: 
                 next_month_new_users_final = next_month_new_users_calculated
+            
             new_users_monthly_fc.append(next_month_new_users_final)
-            TAM_used_cumulative_fc += next_month_new_users_final
+            
+            if DEBUG_MODE and m_idx_fc < 23:
+                 st.write(f"    New Users Appended for M{current_month_num_fc+1}: {next_month_new_users_final}")
+                 if is_cap_enforced_in_config:
+                     st.write(f"    TAM Used Cumulative: {TAM_used_cumulative_fc}, Current Year TAM: {TAM_current_year_fc}")
+
 
     df_forecast_fc = pd.DataFrame(forecast_data_fc).fillna(0)
     df_deposit_log_fc = pd.DataFrame(deposit_log_data_fc).fillna(0)
@@ -435,23 +470,32 @@ def run_forecast(config_param_fc):
     return df_forecast_fc, df_deposit_log_fc, df_default_log_fc, df_lifecycle_fc
 
 # === EXPORT AND DISPLAY ===
-# ... (This section remains the same as your previous version, including formatting and chart checks)
 output_excel_main = io.BytesIO()
 with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main:
     for scenario_idx_main, scenario_data_main in enumerate(scenarios):
-        current_config_main = scenario_data_main.copy()
+        current_config_main = scenario_data_main.copy() # includes cap_tam from UI
         current_config_main.update({
             "kibor": kibor, "spread": spread, "rest_period": rest_period,
             "default_rate": default_rate,
             "global_pre_payout_recovery_pct": global_pre_payout_recovery_pct
         })
+        
+        # --- Clear previous debug prints for new scenario ---
+        # This is tricky in Streamlit as st.write output persists.
+        # For cleaner debugging, you might run only one scenario at a time
+        # or accept that debug prints will accumulate.
+        # A placeholder could be added to clear the main area if needed,
+        # but for now, let's proceed.
+        # ---
+        
         df_forecast_main, df_deposit_log_main, df_default_log_main, df_lifecycle_main = run_forecast(current_config_main)
+        
         st.header(f"Scenario: {scenario_data_main['name']}")
         st.subheader(f"📘 Raw Forecast Data (Cohorts by Joining Month)")
         if not df_forecast_main.empty:
             format_dict = {col: "{:,.0f}" for col in df_forecast_main.columns if df_forecast_main[col].dtype in ['int64', 'float64'] and col not in ['Month Joined', 'Year Joined', 'Duration', 'Assigned Slot']}
-            format_dict["Pools Formed"] = "{:,.2f}" 
-            format_dict["Fee % (on Total Commitment)"] = "{:,.2f}" # Note: No '%' here, as it's a raw percentage value. Add % in display if needed.
+            if 'Pools Formed' in df_forecast_main.columns: format_dict["Pools Formed"] = "{:,.2f}" 
+            if 'Fee % (on Total Commitment)' in df_forecast_main.columns: format_dict["Fee % (on Total Commitment)"] = "{:,.2f}"
             
             existing_format_dict = {k: v for k, v in format_dict.items() if k in df_forecast_main.columns}
             
@@ -553,7 +597,7 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
         FIG_SIZE_MAIN = (10, 4.5)
         st.markdown("##### Chart 1: Monthly Pools Formed vs. Cash In (Installments)")
         chart_cols_m1_main = ["Month", "Pools Formed", "Cash In (Installments This Month)"]
-        if not df_monthly_chart_data_main.empty and all(col in df_monthly_chart_data_main.columns for col in chart_cols_m1_main) and not df_monthly_chart_data_main["Month"].isnull().all():
+        if not df_monthly_chart_data_main.empty and all(col in df_monthly_chart_data_main.columns for col in chart_cols_m1_main) and df_monthly_chart_data_main["Month"].notna().any():
             fig1_main, ax1_main = plt.subplots(figsize=FIG_SIZE_MAIN)
             ax2_main = ax1_main.twinx()
             bars1_main = ax1_main.bar(df_monthly_chart_data_main["Month"], df_monthly_chart_data_main["Pools Formed"],
@@ -561,17 +605,17 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             line1_main, = ax2_main.plot(df_monthly_chart_data_main["Month"], df_monthly_chart_data_main["Cash In (Installments This Month)"],
                                       color=COLOR_SECONDARY_LINE, label="Cash In (Installments)", marker='o', linewidth=2, markersize=4)
             ax1_main.set_xlabel("Month")
-            ax1_main.set_ylabel("Pools Formed", color=COLOR_PRIMARY_BAR)
-            ax2_main.set_ylabel("Cash In (Installments)", color=COLOR_SECONDARY_LINE)
+            ax1_main.set_ylabel("Pools Formed", color=COLOR_PRIMARY_BAR); ax2_main.set_ylabel("Cash In (Installments)", color=COLOR_SECONDARY_LINE)
             ax1_main.tick_params(axis='y', labelcolor=COLOR_PRIMARY_BAR); ax2_main.tick_params(axis='y', labelcolor=COLOR_SECONDARY_LINE)
             ax2_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}")); ax1_main.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
             handles_main = [bars1_main, line1_main]; labels_main = [h.get_label() for h in handles_main]
             fig1_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2)
             fig1_main.tight_layout(rect=[0, 0.05, 1, 1]); st.pyplot(fig1_main)
         else: st.caption("Not enough data for Chart 1.")
+        # ... (rest of the charts with similar checks for empty/all-NaN data for x-axis)
         st.markdown("##### Chart 2: Monthly Users Joining vs. Accrued Gross Profit (from New Cohorts)")
         chart_cols_m2_main = ["Month", "Users Joining This Month", "Gross Profit This Month (Accrued from New Cohorts)"]
-        if not df_monthly_chart_data_main.empty and all(col in df_monthly_chart_data_main.columns for col in chart_cols_m2_main) and not df_monthly_chart_data_main["Month"].isnull().all():
+        if not df_monthly_chart_data_main.empty and all(col in df_monthly_chart_data_main.columns for col in chart_cols_m2_main) and df_monthly_chart_data_main["Month"].notna().any():
             fig2_main, ax3_main = plt.subplots(figsize=FIG_SIZE_MAIN)
             ax4_main = ax3_main.twinx()
             bars2_main = ax3_main.bar(df_monthly_chart_data_main["Month"], df_monthly_chart_data_main["Users Joining This Month"],
@@ -585,11 +629,11 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             fig2_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2)
             fig2_main.tight_layout(rect=[0, 0.05, 1, 1]); st.pyplot(fig2_main)
         else: st.caption("Not enough data for Chart 2.")
+
         st.markdown("##### Chart 3: Annual Pools Formed vs. Annual Cash In (Installments)")
         chart_cols_y1_main = ["Year", "Annual Pools Formed", "Annual Cash In (Installments)"]
-        if not df_yearly_chart_data_main.empty and all(col in df_yearly_chart_data_main.columns for col in chart_cols_y1_main) and not df_yearly_chart_data_main["Year"].isnull().all():
-            fig3_main, ax5_main = plt.subplots(figsize=FIG_SIZE_MAIN)
-            ax6_main = ax5_main.twinx()
+        if not df_yearly_chart_data_main.empty and all(col in df_yearly_chart_data_main.columns for col in chart_cols_y1_main) and df_yearly_chart_data_main["Year"].notna().any():
+            fig3_main, ax5_main = plt.subplots(figsize=FIG_SIZE_MAIN); ax6_main = ax5_main.twinx()
             bars3_main = ax5_main.bar(df_yearly_chart_data_main["Year"], df_yearly_chart_data_main["Annual Pools Formed"], color=COLOR_PRIMARY_BAR, label="Annual Pools Formed", width=0.6)
             line3_main, = ax6_main.plot(df_yearly_chart_data_main["Year"], df_yearly_chart_data_main["Annual Cash In (Installments)"], color=COLOR_SECONDARY_LINE, label="Annual Cash In (Installments)", marker='o', linewidth=2, markersize=4)
             ax5_main.set_xlabel("Year"); ax5_main.set_ylabel("Annual Pools Formed", color=COLOR_PRIMARY_BAR); ax6_main.set_ylabel("Annual Cash In", color=COLOR_SECONDARY_LINE)
@@ -599,11 +643,11 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             fig3_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2)
             fig3_main.tight_layout(rect=[0, 0.05, 1, 1]); st.pyplot(fig3_main)
         else: st.caption("Not enough data for Chart 3.")
+
         st.markdown("##### Chart 4: Annual Users Joining vs. Annual Accrued Gross Profit (from New Cohorts)")
         chart_cols_y2_main = ["Year", "Annual Users Joining", "Annual Gross Profit (Accrued from New Cohorts)"]
-        if not df_yearly_chart_data_main.empty and all(col in df_yearly_chart_data_main.columns for col in chart_cols_y2_main) and not df_yearly_chart_data_main["Year"].isnull().all():
-            fig4_main, ax7_main = plt.subplots(figsize=FIG_SIZE_MAIN)
-            ax8_main = ax7_main.twinx()
+        if not df_yearly_chart_data_main.empty and all(col in df_yearly_chart_data_main.columns for col in chart_cols_y2_main) and df_yearly_chart_data_main["Year"].notna().any():
+            fig4_main, ax7_main = plt.subplots(figsize=FIG_SIZE_MAIN); ax8_main = ax7_main.twinx()
             bars4_main = ax7_main.bar(df_yearly_chart_data_main["Year"], df_yearly_chart_data_main["Annual Users Joining"], color=COLOR_ACCENT_BAR, label="Annual Users Joining", width=0.6)
             line4_main, = ax8_main.plot(df_yearly_chart_data_main["Year"], df_yearly_chart_data_main["Annual Gross Profit (Accrued from New Cohorts)"], color=COLOR_ACCENT_LINE, label="Annual Accrued Gross Profit (New Cohorts)", marker='o', linewidth=2, markersize=4)
             ax7_main.set_xlabel("Year"); ax7_main.set_ylabel("Annual Users Joining", color=COLOR_ACCENT_BAR); ax8_main.set_ylabel("Annual Accrued Profit", color=COLOR_ACCENT_LINE)
@@ -613,11 +657,11 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             fig4_main.legend(handles_main, labels_main, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2)
             fig4_main.tight_layout(rect=[0, 0.05, 1, 1]); st.pyplot(fig4_main)
         else: st.caption("Not enough data for Chart 4.")
+
         st.markdown("##### Chart 5: Annual External Capital vs. Fee & Accrued Profit")
         chart_cols_y3_main = ["Year", "External Capital Needed (Annual Accrual)", "Annual Fee Collected (Accrued)", "Annual Gross Profit (Accrued)"]
-        if not df_profit_share_chart_data_main.empty and all(col in df_profit_share_chart_data_main.columns for col in chart_cols_y3_main) and not df_profit_share_chart_data_main["Year"].isnull().all():
-            fig5_main, ax9_main = plt.subplots(figsize=FIG_SIZE_MAIN)
-            ax10_main = ax9_main.twinx()
+        if not df_profit_share_chart_data_main.empty and all(col in df_profit_share_chart_data_main.columns for col in chart_cols_y3_main) and df_profit_share_chart_data_main["Year"].notna().any():
+            fig5_main, ax9_main = plt.subplots(figsize=FIG_SIZE_MAIN); ax10_main = ax9_main.twinx()
             bars5_main = ax9_main.bar(df_profit_share_chart_data_main["Year"], df_profit_share_chart_data_main["External Capital Needed (Annual Accrual)"], color=COLOR_HIGHLIGHT_BAR, label="External Capital (Accrual)", width=0.6)
             line5_fee_main, = ax10_main.plot(df_profit_share_chart_data_main["Year"], df_profit_share_chart_data_main["Annual Fee Collected (Accrued)"], color=COLOR_PRIMARY_BAR, marker='o', label="Annual Fee (Accrual)", linewidth=2, markersize=4)
             line5_profit_main, = ax10_main.plot(df_profit_share_chart_data_main["Year"], df_profit_share_chart_data_main["Annual Gross Profit (Accrued)"], color=COLOR_SECONDARY_LINE, marker='s', label="Annual Gross Profit (Accrual)", linestyle='--', linewidth=2, markersize=4)
@@ -629,15 +673,16 @@ with pd.ExcelWriter(output_excel_main, engine="xlsxwriter") as excel_writer_main
             fig5_main.tight_layout(rect=[0, 0.05, 1, 1]); st.pyplot(fig5_main)
         else: st.caption("Not enough data for Chart 5.")
 
+
         sheet_name_prefix_main = scenario_data_main['name'][:25].replace(" ", "_").replace("/", "_")
         if not df_forecast_main.empty:
             df_forecast_main.to_excel(excel_writer_main, index=False, sheet_name=f"{sheet_name_prefix_main}_ForecastCohorts")
-        if not df_monthly_summary_main.empty and "Month" in df_monthly_summary_main and not df_monthly_summary_main["Month"].isnull().all():
+        if not df_monthly_summary_main.empty and "Month" in df_monthly_summary_main and df_monthly_summary_main["Month"].notna().any() :
              if not df_monthly_summary_main[cols_to_display_monthly_main].empty:
                 df_monthly_summary_main[cols_to_display_monthly_main].to_excel(excel_writer_main, index=False, sheet_name=f"{sheet_name_prefix_main}_MonthlySummary")
-        if not df_yearly_summary_main.empty and "Year" in df_yearly_summary_main and not df_yearly_summary_main["Year"].isnull().all():
+        if not df_yearly_summary_main.empty and "Year" in df_yearly_summary_main and df_yearly_summary_main["Year"].notna().any():
             df_yearly_summary_main.to_excel(excel_writer_main, index=False, sheet_name=f"{sheet_name_prefix_main}_YearlySummary")
-        if not df_profit_share_main.empty and "Year" in df_profit_share_main and not df_profit_share_main["Year"].isnull().all():
+        if not df_profit_share_main.empty and "Year" in df_profit_share_main and df_profit_share_main["Year"].notna().any():
             df_profit_share_main.to_excel(excel_writer_main, index=False, sheet_name=f"{sheet_name_prefix_main}_ProfitShare")
         if not df_deposit_log_main.empty:
             df_deposit_log_main.to_excel(excel_writer_main, index=False, sheet_name=f"{sheet_name_prefix_main}_DepositLog")
